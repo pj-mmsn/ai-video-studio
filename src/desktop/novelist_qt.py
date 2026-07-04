@@ -286,7 +286,7 @@ class MainWin(QMainWindow):
         <h3 style='color:{C["muted"]}'>角色</h3><pre style='color:{C["text"]}'>{chars}</pre>"""
         self.detail_v.setHtml(html)
         self.right_tabs.setCurrentIndex(0)
-        self.idea_in.setText((d.get('premise',''))
+        self.idea_in.setPlainText(d.get('premise',''))
 
     def _mode_switch(self, idx):
         modes=["idea","outline","write"];self._mode=modes[idx]
