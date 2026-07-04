@@ -297,7 +297,12 @@ class NovelistWindow(QMainWindow):
         class InitThread(QThread):
             done = pyqtSignal(object, object)
             def run(self):
-                agent = NovelistAgent(LLMClient())
+                # 直接创建 LLMClient，不走 config 缓存
+                api_key = os.environ.get("LLM_API_KEY", "")
+                base_url = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com/anthropic")
+                model = os.environ.get("LLM_MODEL", "deepseek-v4-pro")
+                llm = LLMClient(api_key=api_key, base_url=base_url, model=model)
+                agent = NovelistAgent(llm)
                 novel = agent.init_novel(idea, genre)
                 repo = NovelRepository(f"novel_{int(time.time())}")
                 # 创建大纲

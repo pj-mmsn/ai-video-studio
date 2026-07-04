@@ -19,9 +19,10 @@ class NovelRepository:
         self.novel_id = novel_id
         db_path = Path(db_dir) / novel_id / "novel.db"
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(str(db_path))
+        self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self._init_tables()
+        self._lock = __import__('threading').Lock()  # 防止并发写入
 
     def _init_tables(self):
         self.conn.executescript("""
