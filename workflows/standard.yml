@@ -1,0 +1,79 @@
+# 示例工作流配置 — AI Video Studio 标准流水线
+# 节点定义工作流，可以自定义顺序、条件、审批节点
+
+workflow:
+  name: "小说→视频 标准流水线"
+  start: novelist
+
+nodes:
+  - id: novelist
+    name: "📖 小说家"
+    agent: novelist_agent
+    description: "创作小说章节"
+    require_approval: false
+
+  - id: review_novel
+    name: "🔍 审阅小说"
+    agent: reviewer
+    description: "检查小说质量和连贯性"
+    require_approval: true          # 需要人工审批
+
+  - id: director
+    name: "🎬 导演"
+    agent: director_agent
+    description: "改编小说为剧本场景"
+    require_approval: false
+    max_retries: 2
+
+  - id: storyboard
+    name: "🎨 分镜师"
+    agent: storyboard_agent
+    description: "生成分镜图"
+    require_approval: false
+
+  - id: videographer
+    name: "🎥 摄像师"
+    agent: videographer_agent
+    description: "生成视频片段"
+    require_approval: false
+
+  - id: composer
+    name: "🎬 合成导出"
+    agent: composer
+    description: "视频合成 MP4"
+    require_approval: false
+
+  - id: done
+    name: "✅ 完成"
+    agent: ""
+
+edges:
+  - from: novelist
+    to: review_novel
+    label: "写完一章"
+
+  - from: review_novel
+    to: director
+    label: "审批通过"
+    condition: "review_passed"
+
+  - from: review_novel
+    to: novelist
+    label: "审批驳回"
+    condition: "review_failed"
+
+  - from: director
+    to: storyboard
+    label: "场景生成完毕"
+
+  - from: storyboard
+    to: videographer
+    label: "分镜完成"
+
+  - from: videographer
+    to: composer
+    label: "视频片段就绪"
+
+  - from: composer
+    to: done
+    label: "导出完成"
