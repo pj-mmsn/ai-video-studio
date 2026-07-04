@@ -206,9 +206,11 @@ class MainWin(QMainWindow):
             QTabBar::tab{{background:{C['panel']};color:{C['muted']};padding:8px 16px;font-size:12px;border:none;}}
             QTabBar::tab:selected{{color:{C['accent']};border-bottom:2px solid {C['accent']};}}
         """)
-        self.char_v=QTextBrowser();self.char_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
+        self.detail_v=QTextBrowser();self.detail_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
+        right.addTab(self.detail_v,"当前内容")
+        self.char_v=QTextBrowser();self.char_v.setStyleSheet(self.detail_v.styleSheet())
         right.addTab(self.char_v,"角色")
-        self.world_v=QTextBrowser();self.world_v.setStyleSheet(self.char_v.styleSheet())
+        self.world_v=QTextBrowser();self.world_v.setStyleSheet(self.detail_v.styleSheet())
         right.addTab(self.world_v,"世界观")
         h.addWidget(right)
         self.setCentralWidget(body)
@@ -284,15 +286,16 @@ class MainWin(QMainWindow):
         self._mode_switch(2)
 
     def _show_idea(self):
-        """展示已有构思到输出区"""
         d=self._idea
         chars="\n".join(f"{c['name']}({c.get('role','')}): {c.get('traits','')}" for c in d.get("characters",[]))
-        self.content.setHtml(f"""
+        html=f"""
         <h2 style='color:{C["accent"]}'>{d.get('title','')}</h2>
         <p style='color:{C["muted"]}'>{d.get('genre','')} · {d.get('hook','')}</p>
         <blockquote style='color:{C["text"]};border-left:3px solid {C["accent"]};padding-left:12px;'>{d.get('premise','')}</blockquote>
         <h3 style='color:{C["muted"]}'>世界观</h3><p>{d.get('world_building','')}</p>
-        <h3 style='color:{C["muted"]}'>角色</h3><pre style='color:{C["text"]}'>{chars}</pre>""")
+        <h3 style='color:{C["muted"]}'>角色</h3><pre style='color:{C["text"]}'>{chars}</pre>"""
+        self.content.setHtml(html)
+        self.detail_v.setHtml(html)
         self.idea_in.setPlainText(d.get('premise',''))
 
     def _mode_switch(self, idx):
@@ -305,14 +308,21 @@ class MainWin(QMainWindow):
         if nid and self.repo:
             self._nid=nid
             node=self.repo.get_node(nid)
-            if node and node.get("status")=="done":
-                # 加载已写内容展示
+            if not node: return
+            # 右侧"当前内容"展示
+            level=node.get("level","")
+            summary=node.get("summary","")
+            title=node["title"]
+            if level=="section" and node.get("status")=="done":
                 sec=self.repo.conn.execute(
                     "SELECT content,word_count FROM sections WHERE outline_node_id=? ORDER BY id DESC LIMIT 1",
                     (nid,)).fetchone()
                 if sec:
-                    self.content.setPlainText(sec["content"])
-                    self._status(f"已加载: {node['title']} ({sec['word_count']}字)")
+                    self.detail_v.setHtml(f"<h3 style='color:{C['accent']}'>{title}</h3><p style='color:{C['muted']}'>{sec['word_count']}字</p><hr><pre style='color:{C['text']};white-space:pre-wrap;'>{sec['content']}</pre>")
+            elif summary:
+                self.detail_v.setHtml(f"<h3 style='color:{C['accent']}'>{title}</h3><p style='color:{C['text']}'>{summary}</p>")
+            else:
+                self.detail_v.setHtml(f"<h3 style='color:{C['accent']}'>{title}</h3><p style='color:{C['muted']}'>待写作</p>")
 
     def _go(self, tag):
         fb=self.fb_in.text().strip()
