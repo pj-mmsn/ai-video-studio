@@ -113,6 +113,7 @@ def chat_stream(config: dict, system_prompt: str, user_prompt: str,
     )
 
     full_text = []
+    in_thinking = False
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
             for line_bytes in resp:
@@ -120,22 +121,24 @@ def chat_stream(config: dict, system_prompt: str, user_prompt: str,
                 if not line.startswith("data: "):
                     continue
                 data_str = line[6:]
-                try:
-                    data = json.loads(data_str)
-                except json.JSONDecodeError:
-                    continue
+                try: data = json.loads(data_str)
+                except json.JSONDecodeError: continue
 
-                # content_block_delta: 文本增量
+                t = data.get("type","")
+                if t == "content_block_start":
+                    in_thinking = data.get("content_block",{}).get("type")=="thinking"
+                    continue
+                if t == "content_block_stop":
+                    in_thinking = False; continue
+                if in_thinking: continue
+
                 delta = data.get("delta", {})
                 if delta.get("type") == "text_delta":
                     text = delta.get("text", "")
                     if text:
                         full_text.append(text)
-                        if on_chunk:
-                            on_chunk(text)
-                # message_stop: 结束
-                if data.get("type") == "message_stop":
-                    break
+                        if on_chunk: on_chunk(text)
+                if t == "message_stop": break
     except urllib.error.HTTPError as e:
         body = e.read().decode()[:500]
         raise RuntimeError(f"API {e.code}: {body}") from e
