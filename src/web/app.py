@@ -136,7 +136,7 @@ async def produce(request: Request):
         os.environ.setdefault("LLM_MODEL", "gpt-4o-mini")
         # 重载 config——因为 config 在模块加载时已经读了空 Key
         from config import config as cfg
-        cfg.llm.api_key = "sk-mock-mode"
+        cfg.director.api_key = "sk-mock-mode"
         cfg.storyboard.api_key = "sk-mock-mode"
         cfg.videographer.api_key = "sk-mock-mode"
 
