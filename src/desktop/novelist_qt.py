@@ -341,13 +341,18 @@ class MainWin(QMainWindow):
         elif tag=="outline":
             if not self._idea: self.content.setPlainText("请先生成构思");self.go_btn.setEnabled(True);return
             self.content.clear();self.out_status.setText("生成中...");self.go_btn.setEnabled(False)
-            # 有大纲+反馈 → 打磨模式
-            if self.repo and self.repo.get_outline_tree() and fb:
-                v=self.v_in.text() or "3";c=self.c_in.text() or "4"
-                u=f"已有设定:\n{json.dumps(self._idea,ensure_ascii=False)}\n\n现有大纲已加载。修改建议: {fb}\n\n请根据建议调整大纲结构。规划约{v}卷×{c}章。返回完整JSON。"
-            else:
-                v=self.v_in.text() or "3";c=self.c_in.text() or "4"
-                u=f"已有设定:\n{json.dumps(self._idea,ensure_ascii=False)}\n规划{v}卷×{c}章"
+            # 注入 Tier4: 角色+世界观
+            ctx_parts=[json.dumps(self._idea,ensure_ascii=False)]
+            chars=self._idea.get("characters",[])
+            if chars:
+                ctx_parts.append("角色设定(大纲必须严格匹配):\n"+"\n".join(
+                    f"- {c['name']}({c.get('role','')}): {c.get('traits','')}" for c in chars))
+            wb=self._idea.get("world_building","")
+            if wb: ctx_parts.append(f"世界观约束: {wb}")
+            ctx_text="\n\n".join(ctx_parts)
+            v=self.v_in.text() or "3";c=self.c_in.text() or "4"
+            fb_prefix=f"修改建议: {fb}\n\n" if fb else ""
+            u=f"{ctx_text}\n\n{fb_prefix}请规划约{v}卷×{c}章的大纲。返回完整JSON。"
             self._th=StreamThread(self.cfg,P["outline"],u)
             self._th.chunk.connect(self._chunk)
             self._th.done.connect(self._out_done)
