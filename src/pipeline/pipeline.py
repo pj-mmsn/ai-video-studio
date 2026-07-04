@@ -20,6 +20,8 @@ from src.agents.director import DirectorAgent
 from src.agents.storyboard import StoryboardAgent
 from src.agents.videographer import VideographerAgent
 from src.agents.reviewer import ReviewerAgent, ReviewResult
+from src.db.repository import ProjectRepository, StageStatus
+from src.context.bible import StoryBible
 from config import config
 
 
@@ -74,15 +76,16 @@ class VideoPipeline:
         image_model: str = None,
         video_model: str = None,
         use_mock: bool = False,
-        enable_reviewer: bool = True,     # 新增：启用审查
-        reviewer_strictness: int = 6,      # 新增：审查严格度 1-10
+        enable_reviewer: bool = True,
+        reviewer_strictness: int = 6,
+        project_id: str = None,          # 新增：项目 ID（支持断点续传）
     ):
         # 三个专业 Agent
         self.director = DirectorAgent(LLMClient(model=director_model))
         self.storyboard = StoryboardAgent(ImageGenClient(model=image_model))
         self.videographer = VideographerAgent(VideoGenClient(model=video_model))
 
-        # 审查员（知识库建议：CrewAI 模式的核心组件）
+        # 审查员
         self.reviewer = ReviewerAgent(
             llm_client=LLMClient() if enable_reviewer else None,
             strictness=reviewer_strictness,
@@ -91,6 +94,12 @@ class VideoPipeline:
         if use_mock:
             self.storyboard.use_mock = True
             self.videographer.use_mock = True
+
+        # 数据库持久化层 + 故事圣经
+        self.project_id = project_id or f"proj_{int(time.time())}"
+        self.repo: ProjectRepository = None
+        self.bible: StoryBible = None
+        self._db_initialized = False
 
     # ================================================================
     # 全流程（含审查和重试）
@@ -102,51 +111,134 @@ class VideoPipeline:
             created_at=time.strftime("%Y-%m-%d %H:%M"),
         )
 
+        # ---- 初始化数据库 ----
+        self._init_db(idea, style)
+
+        # ---- 断点续传检查 ----
+        progress = self.repo.get_progress()
+        if progress["can_resume"] and progress["last_stage"] != "done":
+            print(f"\n🔄 检测到未完成项目，从 {progress['last_stage']} 阶段恢复...")
+            print(f"   进度: 场景{progress['scenes_done']}/{progress['total_scenes']} "
+                  f"| 分镜{progress['shots_done']} | 视频{progress['clips_done']}")
+
+        # ---- 获取圣经上下文 ----
+        bible_context = self.bible.get_context_text()
+
         print("=" * 60)
         print("🎬 AI 视频工作室 — 开始制作")
+        print(f"   项目: {self.project_id}")
         print(f"   想法: {idea}  风格: {style}")
         if self.reviewer:
-            print(f"   模式: 顺序管道 + 审查反馈（严格度{self.reviewer.strictness}）")
+            print(f"   模式: 顺序管道 + 审查 + 数据库持久化")
+        if bible_context:
+            print(f"   📖 已加载故事圣经 ({self.bible.get_character_count()} 个角色)")
         print("=" * 60)
 
-        # ---- Stage 1: 剧本 + 审查 ----
-        production.script = self._stage_with_review(
-            "剧本",
-            lambda: self.director.create_script(idea, style),
-            lambda result: self.reviewer.review_script(result) if self.reviewer else None,
-            production,
-            max_retries=2,
-        )
-        production.title = production.script.title
-        self._save_script(production.script)
+        # ---- Stage 1: 剧本（注入圣经上下文）----
+        if progress["last_stage"] in ("new", "script"):
+            # 把圣经注入到 Director
+            if bible_context:
+                self.director._bible_context = bible_context
 
-        # ---- Stage 2: 分镜 + 审查 ----
-        production.storyboard = self._stage_with_review(
-            "分镜",
-            lambda: self.storyboard.create_storyboard(production.script),
-            lambda result: self.reviewer.review_storyboard(result) if self.reviewer else None,
-            production,
-            max_retries=2,
-        )
-        self._save_storyboard(production.storyboard)
+            production.script = self._stage_with_review(
+                "剧本",
+                lambda: self.director.create_script(idea, style),
+                lambda result: self.reviewer.review_script(result) if self.reviewer else None,
+                production,
+                max_retries=2,
+            )
+            production.title = production.script.title
 
-        # ---- Stage 3: 视频 + 审查 ----
+            # 持久化场景 + 更新圣经
+            self.repo.save_scenes(production.script.scenes)
+            self.bible.update_from_script(production.script)
+            self.repo.update_project(title=production.title, status="script_done")
+            self._save_script(production.script)
+        else:
+            # 从数据库恢复
+            scene_records = self.repo.get_scenes()
+            from src.models import Scene as SceneModel
+            production.script = Script(
+                title=progress["project"].title,
+                logline="",
+                scenes=[SceneModel(
+                    scene_id=r.scene_id, description=r.description,
+                    visual_prompt=r.visual_prompt, motion_prompt=r.motion_prompt,
+                    duration_sec=r.duration_sec, dialogue=r.dialogue, camera=r.camera,
+                ) for r in scene_records],
+            )
+            production.title = progress["project"].title
+            print(f"   🔄 从数据库恢复剧本: {len(scene_records)} 个场景")
+
+        # ---- Stage 2: 分镜 ----
+        if progress["last_stage"] in ("new", "script", "storyboard"):
+            production.storyboard = self._stage_with_review(
+                "分镜",
+                lambda: self.storyboard.create_storyboard(production.script),
+                lambda result: self.reviewer.review_storyboard(result) if self.reviewer else None,
+                production,
+                max_retries=2,
+            )
+            # 持久化分镜
+            self.repo.save_shots(production.storyboard.shots)
+            self.repo.update_project(status="storyboard_done")
+            self._save_storyboard(production.storyboard)
+        else:
+            shot_records = self.repo.get_shots()
+            from src.models import Shot as ShotModel
+            production.storyboard = Storyboard(script_title=production.title)
+            for r in shot_records:
+                production.storyboard.shots.append(ShotModel(
+                    scene_id=r.scene_id, image_prompt=r.image_prompt,
+                    image_path=r.image_path or None, image_url=r.image_url or None,
+                    motion_prompt=r.motion_prompt,
+                ))
+            print(f"   🔄 从数据库恢复分镜: {len(shot_records)} 个镜头")
+
+        # ---- Stage 3: 视频 ----
         production.clips = self.videographer.produce(production.storyboard)
+        self.repo.save_clips(production.clips)
         if self.reviewer:
             review = self.reviewer.review_clips(production.clips, production.storyboard)
             production.reviews.append(review)
+            self.repo.save_review(review)
 
+        self.repo.update_project(status="done", current_stage=len(production.clips))
         self._save_production(production)
+
+        # 打印审查总结
+        bible_text = self.bible.get_context_text()
+        if bible_text:
+            print(f"\n📖 故事圣经 ({self.bible.get_character_count()} 个角色, 跨场景一致)")
 
         print("\n" + "=" * 60)
         print("🎉 制作完成！")
+        print(f"   项目: {self.project_id}")
+        print(f"   数据库: {self.repo.db_path}")
         print(f"   {production.progress_report()}")
         if self.reviewer:
             print(f"   {self.reviewer.summary()}")
         print(f"   产出目录: {config.output_dir}")
         print("=" * 60)
 
+        self.repo.close()
         return production
+
+    def close(self):
+        """关闭数据库连接"""
+        if self.repo:
+            self.repo.close()
+
+    def _init_db(self, idea: str, style: str):
+        """初始化数据库连接和故事圣经"""
+        if self._db_initialized:
+            return
+        self.repo = ProjectRepository(self.project_id)
+        self.bible = StoryBible(self.repo, LLMClient())
+        progress = self.repo.get_progress()
+        if not progress["can_resume"]:
+            self.repo.create_project(idea, style)
+        self._db_initialized = True
 
     # ================================================================
     # 带审查和重试的阶段执行器

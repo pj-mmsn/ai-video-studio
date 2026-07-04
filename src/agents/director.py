@@ -144,18 +144,25 @@ class DirectorAgent:
     def __init__(self, llm_client: LLMClient = None):
         self.llm = llm_client or LLMClient()
         self.use_mock = not self.llm.api_key or "mock" in self.llm.api_key.lower()
+        self._bible_context = ""  # 故事圣经上下文（Pipeline 注入）
 
     def create_script(self, idea: str, style: str = "cinematic") -> Script:
         """把用户想法变成剧本"""
         if self.use_mock:
             return self._create_mock_script(idea, style)
 
-        print(f"🎬 [Director] 正在创作剧本...")
-        print(f"   想法: {idea}")
-        print(f"   风格: {style}")
-        print(f"   模型: {self.llm.name}")
+        # 构建系统提示词：基础 + 圣经上下文
+        system = DIRECTOR_SYSTEM
+        if self._bible_context:
+            system += f"\n\n{self._bible_context}"
+            system += "\n\n⚠️ 重要：你的剧本必须严格遵循以上「故事圣经」中的设定。角色名、地点、道具、风格必须和已有设定一致。"
 
-        raw = self.llm.chat(DIRECTOR_SYSTEM, f"创意想法：{idea}\n视觉风格：{style}\n请生成完整剧本。")
+        print(f"🎬 [Director] 正在创作剧本...")
+        print(f"   想法: {idea}  风格: {style}  模型: {self.llm.name}")
+        if self._bible_context:
+            print(f"   📖 已注入故事圣经上下文")
+
+        raw = self.llm.chat(system, f"创意想法：{idea}\n视觉风格：{style}\n请生成完整剧本。")
         script = self._parse_script(raw)
         script.raw_text = raw
         self._print_script(script)
