@@ -19,7 +19,6 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 sys.path.insert(0, PROJECT_ROOT)
 
 from src.agents.novelist import NovelistAgent, Novel
-from src.models import LLMClient
 
 # 简洁的 Rich 风格命令行
 try:
@@ -38,7 +37,7 @@ class NovelistCLI:
     """小说家命令行界面"""
 
     def __init__(self):
-        self.agent = NovelistAgent(LLMClient())
+        self.agent = NovelistAgent()
         self.running = True
 
     def run(self):

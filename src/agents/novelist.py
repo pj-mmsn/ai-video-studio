@@ -96,11 +96,13 @@ class Novel:
 class NovelistAgent:
     """交互式小说创作 Agent"""
 
-    def __init__(self, llm_client: LLMClient = None):
-        self.llm = llm_client or LLMClient()
-        self.novel: Novel = None
-        self.current_chapter: int = 0
-        self.history: list[dict] = []   # 对话历史
+    def __init__(self, config: dict = None):
+        from config import load_config
+        self.config = config or load_config()
+
+    def _chat(self, system: str, user: str) -> str:
+        from src.models.llm_client import chat
+        return chat(self.config, system, user)
 
     # ---------------------------------------------------------------
     # 初始化：设定世界观
@@ -124,7 +126,7 @@ class NovelistAgent:
 }}"""
 
         info(f"📖 正在构思小说框架...")
-        raw = self.llm.chat(NOVELIST_SYSTEM, prompt)
+        raw = self._chat(NOVELIST_SYSTEM, prompt)
 
         data = self._parse_json(raw)
         self.novel = Novel(
@@ -163,7 +165,7 @@ class NovelistAgent:
 要求: 1000-3000字，有画面感，结尾留钩子。"""
 
         info(f"✍️  正在写第{num}章...")
-        raw = self.llm.chat(NOVELIST_SYSTEM, prompt)
+        raw = self._chat(NOVELIST_SYSTEM, prompt)
 
         # 解析章节内容
         title, content, summary, hint = self._parse_chapter(raw, num)
@@ -193,7 +195,7 @@ class NovelistAgent:
 要求: 保持剧情走向不变，但根据反馈调整。"""
 
         info(f"🔄 正在重写第{ch.number}章...")
-        raw = self.llm.chat(NOVELIST_SYSTEM, prompt)
+        raw = self._chat(NOVELIST_SYSTEM, prompt)
 
         title, content, summary, hint = self._parse_chapter(raw, ch.number)
         ch.title = title
@@ -218,7 +220,7 @@ class NovelistAgent:
 请输出修改后的完整章节。只修改指定的部分，其余保持不变。"""
 
         info(f"🔧 正在修改...")
-        raw = self.llm.chat(NOVELIST_SYSTEM, prompt)
+        raw = self._chat(NOVELIST_SYSTEM, prompt)
         ch.content = raw
         info(f"   ✅ 修改完成")
         return raw
