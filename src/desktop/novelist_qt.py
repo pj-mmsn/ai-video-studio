@@ -463,16 +463,28 @@ class MainWin(QMainWindow):
 
     def _write_done(self,raw):
         self.go_btn.setEnabled(True);self._status("")
+        clean=self._clean_output(raw)
+        self.detail_v.setPlainText(clean)
         if self.repo and self._nid:
-            m=re.search(r'【本节摘要】[：:]\s*(.+?)(?:\n|$)',raw)
-            self.repo.save_section(self._nid,raw,m.group(1) if m else "")
+            m=re.search(r'【本节摘要】[：:]\s*(.+?)(?:\n|$)',clean)
+            self.repo.save_section(self._nid,clean,m.group(1) if m else "")
             self.repo.update_node_status(self._nid,"done")
             self._refresh_tree()
             p=self.repo.get_progress()
             self.prog_bar.setValue(int(p.get("progress_pct",0)))
             self.prog_lbl.setText(f"{p['done_sections']}/{p['total_sections']}节 · {p['total_words']:,}字")
-            self.ctx_lbl.hide()
             self._status(f"完成 — {p['total_words']:,}字")
+
+    def _clean_output(self,text):
+        """去掉LLM输出前面可能混入的JSON/大纲标记"""
+        lines=text.split('\n');start=0
+        for i,line in enumerate(lines):
+            s=line.strip()
+            if not s or s[0] in '{[}]': continue
+            if s.startswith('```') or s.startswith('## ') or s.startswith('---'): continue
+            if s.startswith('第') and ('章' in s or '节' in s or '卷' in s): continue
+            start=i;break
+        return '\n'.join(lines[start:]).strip()
 
     def _init_db(self,d):
         self.repo=NovelRepository(f"novel_{int(time.time())}")
