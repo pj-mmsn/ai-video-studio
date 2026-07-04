@@ -265,6 +265,31 @@ class NovelistWindow(QMainWindow):
         if not ok or not idea.strip():
             return
 
+        # 用 Z.AI 的 deepseek-v4-pro（本项目同款模型）
+        if not os.environ.get("LLM_API_KEY"):
+            # 先检查 .env 文件
+            try:
+                from dotenv import load_dotenv
+                load_dotenv()
+            except ImportError:
+                pass
+            
+            # 从 config 读取（.env 加载后的值）
+            from config import config as cfg
+            if cfg.director.api_key and "sk-" in cfg.director.api_key:
+                os.environ["LLM_API_KEY"] = cfg.director.api_key
+                os.environ.setdefault("LLM_BASE_URL", cfg.director.base_url)
+                os.environ.setdefault("LLM_MODEL", cfg.director.model)
+            else:
+                QMessageBox.warning(self, "需要 API Key",
+                    "未检测到 API Key。\n\n"
+                    "请复制 .env.example 为 .env，填入你的 Key:\n"
+                    "  LLM_API_KEY=sk-your-key\n"
+                    "  LLM_BASE_URL=https://api.z.ai\n"
+                    "  LLM_MODEL=deepseek-v4-pro\n\n"
+                    "Z.AI 后台获取 Key: https://chat.z.ai")
+                return
+
         genre = self.genre_combo.currentText()
         self._status(f"正在构思《{idea[:20]}...》...")
 
