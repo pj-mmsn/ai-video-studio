@@ -46,8 +46,8 @@ def build_parser():
     pp.add_argument("--director-model", default="deepseek-v4-pro", help="剧本模型")
     pp.add_argument("--image-api", default="mock", choices=["mock","dalle","comfyui"],
                     help="图像生成后端: mock/dalle/comfyui")
-    pp.add_argument("--video-api", default="mock", choices=["mock","runway","pika","comfyui"],
-                    help="视频生成后端: mock/runway/pika/comfyui")
+    pp.add_argument("--video-api", default="mock", choices=["mock","runway","pika","comfyui","jimeng"],
+                    help="视频生成后端: mock/runway/pika/comfyui/jimeng")
     pp.add_argument("--scenes", type=int, default=5, help="场景数量 (3-12)")
     pp.add_argument("--duration", type=int, default=5, help="每场景时长(秒)")
     pp.add_argument("--mock", action="store_true", help="Mock模式(无需API Key)")
