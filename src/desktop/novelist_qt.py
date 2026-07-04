@@ -143,15 +143,27 @@ class MainWin(QMainWindow):
         self.stack.addWidget(p3)
 
         sl.addWidget(self.stack);sl.addStretch()
+
+        # 输出区(侧边栏底部)
+        out_w=QWidget();ol=QVBoxLayout(out_w);ol.setContentsMargins(4,0,4,4)
+        self.out_status=QLabel("");self.out_status.setStyleSheet(f"color:{C['yellow']};font-size:11px;")
+        ol.addWidget(self.out_status)
+        self.content=QTextEdit();self.content.setReadOnly(True)
+        self.content.setFont(QFont("Microsoft YaHei",11))
+        self.content.setMaximumHeight(160)
+        self.content.setStyleSheet(f"""
+            QTextEdit{{background:{C['card']};color:{C['text']};border:1px solid {C['border']};
+            border-radius:8px;padding:8px;line-height:1.6;selection-background:{C['accent']};}}
+        """)
+        self.content.setPlaceholderText("AI输出区")
+        ol.addWidget(self.content)
+        sl.addWidget(out_w)
         info=QLabel(f"<span style='color:{C['muted']};font-size:10px;'>模型: {self.cfg['model']}</span>")
         info.setStyleSheet("padding-top:8px;");sl.addWidget(info)
         h.addWidget(sidebar)
 
-        # ── 中央区域 ──
-        mid = QSplitter(Qt.Vertical)
-        mid.setStyleSheet(f"QSplitter::handle{{background:{C['border']};height:1px;}}")
-
-        # 大纲树
+        # ── 中央区域(大纲树) ──
+        mid=QWidget();ml=QVBoxLayout(mid);ml.setContentsMargins(0,0,0,0)
         self.tree=QTreeWidget()
         self.tree.setHeaderHidden(True);self.tree.setIndentation(16)
         self.tree.setStyleSheet(f"""
@@ -161,35 +173,16 @@ class MainWin(QMainWindow):
             QTreeWidget::item:selected{{background:#2a3a5c;color:{C['accent']};}}
         """)
         self.tree.itemClicked.connect(lambda i,_:self._tree_click(i))
-        mid.addWidget(self.tree)
-
-        # 输出区
-        out_w=QWidget();ol=QVBoxLayout(out_w);ol.setContentsMargins(16,8,16,12)
-        oh=QHBoxLayout();oh.setContentsMargins(0,0,0,4)
-        self.out_title=QLabel("输出");self.out_title.setStyleSheet(f"color:{C['muted']};font-size:11px;font-weight:600;")
-        oh.addWidget(self.out_title);oh.addStretch()
-        self.out_status=QLabel("");self.out_status.setStyleSheet(f"color:{C['yellow']};font-size:11px;")
-        oh.addWidget(self.out_status);ol.addLayout(oh)
-        self.content=QTextEdit();self.content.setReadOnly(True)
-        self.content.setFont(QFont("Microsoft YaHei",13))
-        self.content.setStyleSheet(f"""
-            QTextEdit{{background:{C['bg']};color:{C['text']};border:1px solid {C['border']};
-            border-radius:10px;padding:20px;line-height:1.9;selection-background:{C['accent']};}}
-        """)
-        self.content.setPlaceholderText("输出区")
-        ol.addWidget(self.content)
-
-        # 底部栏
+        ml.addWidget(self.tree)
+        # 反馈+执行栏
         bar=QHBoxLayout()
-        self.fb_in=QLineEdit();self.fb_in.setPlaceholderText("反馈意见 (Enter 发送)...");self.fb_in.returnPressed.connect(lambda:self._go("write"))
+        self.fb_in=QLineEdit();self.fb_in.setPlaceholderText("修改意见 (Enter 执行)...");self.fb_in.returnPressed.connect(lambda:self._go(self._mode))
         self.fb_in.setStyleSheet(f"background:{C['card']};color:{C['text']};border:1px solid {C['border']};border-radius:8px;padding:10px 14px;font-size:13px;")
         bar.addWidget(self.fb_in)
         self.go_btn=QPushButton("执行");self.go_btn.clicked.connect(lambda:self._go(self._mode))
         self.go_btn.setStyleSheet(f"QPushButton{{background:{C['accent']};color:#000;border-radius:8px;padding:10px 24px;font-weight:600;}}QPushButton:hover{{opacity:0.9;}}QPushButton:disabled{{background:{C['card']};color:{C['muted']};}}")
         bar.addWidget(self.go_btn)
-        ol.addLayout(bar)
-        mid.addWidget(out_w)
-        mid.setSizes([180,520])
+        ml.addLayout(bar)
         h.addWidget(mid)
 
         # ── 右边栏 ──
@@ -293,6 +286,16 @@ class MainWin(QMainWindow):
         modes=["idea","outline","write"];self._mode=modes[idx]
         self.stack.setCurrentIndex(idx)
         for i,b in enumerate(self.btns):b.setChecked(i==idx)
+        # 切换时自动在右侧展示已有内容
+        if idx==0 and self._idea: self._show_idea()
+        elif idx==1 and self._idea: self._show_idea()
+        elif idx==2:
+            tree=self.repo.get_outline_tree() if self.repo else []
+            if tree:
+                done=[n for n in tree if n.get("status")=="done"]
+                total=len([n for n in tree if n.get("level")=="section"])
+                self.prog_lbl.setText(f"{len(done)}/{total}节 · {self.repo.get_progress()['total_words']:,}字")
+                self.prog_bar.setValue(int(len(done)/total*100) if total else 0)
 
     def _tree_click(self, item):
         nid=item.data(0,Qt.UserRole)
