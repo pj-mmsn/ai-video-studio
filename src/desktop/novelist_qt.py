@@ -311,7 +311,7 @@ class MainWin(QMainWindow):
                     for i,s in enumerate(sibs):
                         done="✓" if s["status"]=="done" else "○"
                         color=C['green'] if s["status"]=="done" else C['muted']
-                        lines.append(f"<p style='color:{color}'>{done} 第{i+1}节 {s['title']}: {s.get('summary','')}</p>")
+                        lines.append(f"<p style='color:{color}'>{done} 第{i+1}节 {s['title']}: {s['summary'] or ''}</p>")
                     self.detail_v.setHtml("".join(lines))
                     self.right_tabs.setCurrentIndex(0)
                     self._status(f"已选: {title} ({len(sibs)}节)")
@@ -374,7 +374,7 @@ class MainWin(QMainWindow):
                     chap_ctx="## 本章结构\n"
                     for i,sib in enumerate(siblings):
                         marker="← 当前" if sib["title"]==n["title"] else ""
-                        chap_ctx+=f"- 第{i+1}节 {sib['title']}: {sib.get('summary','')} {marker}\n"
+                        chap_ctx+=f"- 第{i+1}节 {sib['title']}: {sib['summary'] or ''} {marker}\n"
             # 有反馈 → 带上已有内容一起给模型
             if fb and n.get("status")=="done":
                 sec=self.repo.conn.execute(
