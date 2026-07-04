@@ -1,17 +1,19 @@
 """
 小说家 — PyQt5 原生桌面应用
-============================================================
-启动: python -m src.desktop.novelist_qt
-
-真正的 Windows 原生窗口: 菜单栏/工具栏/状态栏/可拖拽面板
 """
 import sys
 import os
-import json
-import threading
-import queue
-import time
-import re
+
+# 修复 Windows 下 Qt 平台插件找不到的问题
+import PyQt5
+_qt_plugins = os.path.join(os.path.dirname(PyQt5.__file__), "Qt5", "plugins")
+os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = os.path.join(_qt_plugins, "platforms")
+# 把 Qt bin 目录也加到 PATH（有些 DLL 需要）
+_qt_bin = os.path.join(os.path.dirname(PyQt5.__file__), "Qt5", "bin")
+if os.path.exists(_qt_bin):
+    os.environ["PATH"] = _qt_bin + ";" + os.environ.get("PATH", "")
+
+import json, threading, time, re
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, PROJECT_ROOT)
