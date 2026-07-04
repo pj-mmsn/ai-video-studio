@@ -147,7 +147,23 @@ class MainWin(QMainWindow):
         info.setStyleSheet("padding-top:8px;");sl.addWidget(info)
         h.addWidget(sidebar)
 
-        # ── 中央输出区 ──
+        # ── 中央区域 ──
+        mid = QSplitter(Qt.Vertical)
+        mid.setStyleSheet(f"QSplitter::handle{{background:{C['border']};height:1px;}}")
+
+        # 大纲树
+        self.tree=QTreeWidget()
+        self.tree.setHeaderHidden(True);self.tree.setIndentation(16)
+        self.tree.setStyleSheet(f"""
+            QTreeWidget{{background:transparent;color:{C['text']};border:none;font-size:13px;}}
+            QTreeWidget::item{{padding:4px 8px;border-radius:4px;}}
+            QTreeWidget::item:hover{{background:{C['card']};}}
+            QTreeWidget::item:selected{{background:#2a3a5c;color:{C['accent']};}}
+        """)
+        self.tree.itemClicked.connect(lambda i,_:self._tree_click(i))
+        mid.addWidget(self.tree)
+
+        # 输出区
         out_w=QWidget();ol=QVBoxLayout(out_w);ol.setContentsMargins(16,8,16,12)
         oh=QHBoxLayout();oh.setContentsMargins(0,0,0,4)
         self.out_title=QLabel("输出");self.out_title.setStyleSheet(f"color:{C['muted']};font-size:11px;font-weight:600;")
@@ -172,7 +188,9 @@ class MainWin(QMainWindow):
         self.go_btn.setStyleSheet(f"QPushButton{{background:{C['accent']};color:#000;border-radius:8px;padding:10px 24px;font-weight:600;}}QPushButton:hover{{opacity:0.9;}}QPushButton:disabled{{background:{C['card']};color:{C['muted']};}}")
         bar.addWidget(self.go_btn)
         ol.addLayout(bar)
-        h.addWidget(out_w)
+        mid.addWidget(out_w)
+        mid.setSizes([180,520])
+        h.addWidget(mid)
 
         # ── 右边栏 ──
         right=QTabWidget()
@@ -181,19 +199,8 @@ class MainWin(QMainWindow):
             QTabBar::tab{{background:{C['panel']};color:{C['muted']};padding:8px 16px;font-size:12px;border:none;}}
             QTabBar::tab:selected{{color:{C['accent']};border-bottom:2px solid {C['accent']};}}
         """)
-        # 大纲树
-        self.tree=QTreeWidget()
-        self.tree.setHeaderHidden(True);self.tree.setIndentation(16)
-        self.tree.setStyleSheet(f"""
-            QTreeWidget{{background:transparent;color:{C['text']};border:none;font-size:13px;}}
-            QTreeWidget::item{{padding:4px 8px;border-radius:4px;}}
-            QTreeWidget::item:hover{{background:{C['card']};}}
-            QTreeWidget::item:selected{{background:#2a3a5c;color:{C['accent']};}}
-        """)
-        self.tree.itemClicked.connect(lambda i,_:self._tree_click(i))
-        right.addTab(self.tree,"大纲")
         self.detail_v=QTextBrowser();self.detail_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
-        right.addTab(self.detail_v,"当前")
+        right.addTab(self.detail_v,"当前内容")
         self.char_v=QTextBrowser();self.char_v.setStyleSheet(self.detail_v.styleSheet())
         right.addTab(self.char_v,"角色")
         self.world_v=QTextBrowser();self.world_v.setStyleSheet(self.detail_v.styleSheet())
