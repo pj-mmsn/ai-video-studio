@@ -1,10 +1,16 @@
 """
 小说家 — PyQt5 原生桌面应用（重构版）
-============================================================
-架构: 配置→Agent→Repository 全在主线程，只有 LLM 网络调用走 QThread
 """
 import sys, os, re, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+# Windows Qt 平台插件路径修复
+import PyQt5
+_qt_dir = os.path.dirname(PyQt5.__file__)
+os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = os.path.join(_qt_dir, "Qt5", "plugins", "platforms")
+_qt_bin = os.path.join(_qt_dir, "Qt5", "bin")
+if os.path.exists(_qt_bin):
+    os.environ["PATH"] = _qt_bin + ";" + os.environ.get("PATH", "")
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem,
