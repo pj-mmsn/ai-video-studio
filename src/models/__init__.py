@@ -14,7 +14,8 @@ from typing import Optional
 
 from openai import OpenAI
 
-from config import config
+from config import load_config as _load_config
+_config = _load_config()
 
 
 # ================================================================
@@ -102,9 +103,9 @@ class LLMClient(BaseModelClient):
     """
 
     def __init__(self, api_key: str = None, base_url: str = None, model: str = None):
-        _api_key = api_key or config.director.api_key
-        _base_url = base_url or config.director.base_url
-        _model = model or config.director.model
+        _api_key = api_key or _config["api_key"]
+        _base_url = base_url or _config["base_url"]
+        _model = model or _config["model"]
         super().__init__(_model, _api_key)
         self.base_url = _base_url
         self._use_anthropic = "/anthropic" in _base_url
@@ -130,7 +131,7 @@ class LLMClient(BaseModelClient):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=temperature or config.director.temperature,
+            temperature=temperature or _config["temperature"],
         )
         return response.choices[0].message.content or ""
 
@@ -182,11 +183,11 @@ class ImageGenClient(BaseModelClient):
     """
 
     def __init__(self, api_key: str = None, base_url: str = None, model: str = None):
-        _api_key = api_key or config.storyboard.api_key
-        super().__init__(model or config.storyboard.model, _api_key)
+        _api_key = api_key or _config["image_api_key"]
+        super().__init__(model or _config["image_model"], _api_key)
         self.client = OpenAI(
             api_key=_api_key,
-            base_url=base_url or config.storyboard.base_url,
+            base_url=base_url or _config["image_base_url"],
         )
 
     def generate(self, prompt: str, size: str = None) -> str:
@@ -195,7 +196,7 @@ class ImageGenClient(BaseModelClient):
             response = self.client.images.generate(
                 model=self.model_name,
                 prompt=prompt,
-                size=size or config.storyboard.image_size,
+                size=size or _config.get("image_size", "1024x1024"),
                 n=1,
                 quality="standard",
             )
@@ -246,9 +247,9 @@ class VideoGenClient(BaseModelClient):
     """
 
     def __init__(self, api_key: str = None, base_url: str = None, model: str = None):
-        _api_key = api_key or config.videographer.api_key
-        super().__init__(model or config.videographer.model, _api_key)
-        self.base_url = base_url or config.videographer.base_url
+        _api_key = api_key or _config["video_api_key"]
+        super().__init__(model or _config["video_model"], _api_key)
+        self.base_url = base_url or _config["video_base_url"]
 
     def generate(self, image_path: str, motion_prompt: str, duration: int = None) -> str:
         """从图片生成视频片段，返回视频路径或 URL
@@ -271,7 +272,7 @@ class VideoGenClient(BaseModelClient):
         from pathlib import Path
 
         dur = duration or config.videographer.duration
-        output = Path(config.output_dir) / "video" / f"scene_{int(time.time())}.mp4"
+        output = Path(_config.get("output_dir", "output")) / "video" / f"scene_{int(time.time())}.mp4"
         output.parent.mkdir(parents=True, exist_ok=True)
 
         # 简单：复制图片作为"视频"占位
@@ -291,4 +292,3 @@ class VideoGenClient(BaseModelClient):
 
 # 便捷导入
 from pathlib import Path
-from config import config as _cfg  # noqa: E402
