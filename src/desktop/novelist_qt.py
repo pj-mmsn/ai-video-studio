@@ -147,30 +147,7 @@ class MainWin(QMainWindow):
         info.setStyleSheet("padding-top:8px;");sl.addWidget(info)
         h.addWidget(sidebar)
 
-        # ── 中央区域 ──
-        mid = QSplitter(Qt.Vertical)
-        mid.setStyleSheet(f"QSplitter::handle{{background:{C['border']};height:1px;}}")
-
-        # 大纲树
-        tree_w=QWidget();tl=QVBoxLayout(tree_w);tl.setContentsMargins(0,0,0,0)
-        hdr=QHBoxLayout();hdr.setContentsMargins(16,12,16,8)
-        self.tree_title=QLabel("大纲");self.tree_title.setStyleSheet(f"color:{C['muted']};font-size:11px;font-weight:600;")
-        hdr.addWidget(self.tree_title);hdr.addStretch()
-        self.tree_cnt=QLabel("");self.tree_cnt.setStyleSheet(f"color:{C['muted']};font-size:11px;")
-        hdr.addWidget(self.tree_cnt);tl.addLayout(hdr)
-        self.tree=QTreeWidget()
-        self.tree.setHeaderHidden(True);self.tree.setIndentation(16)
-        self.tree.setStyleSheet(f"""
-            QTreeWidget{{background:transparent;color:{C['text']};border:none;font-size:13px;}}
-            QTreeWidget::item{{padding:4px 8px;border-radius:4px;}}
-            QTreeWidget::item:hover{{background:{C['card']};}}
-            QTreeWidget::item:selected{{background:#2a3a5c;color:{C['accent']};}}
-        """)
-        self.tree.itemClicked.connect(lambda i,_:self._tree_click(i))
-        tl.addWidget(self.tree)
-        mid.addWidget(tree_w)
-
-        # 输出区
+        # ── 中央输出区 ──
         out_w=QWidget();ol=QVBoxLayout(out_w);ol.setContentsMargins(16,8,16,12)
         oh=QHBoxLayout();oh.setContentsMargins(0,0,0,4)
         self.out_title=QLabel("输出");self.out_title.setStyleSheet(f"color:{C['muted']};font-size:11px;font-weight:600;")
@@ -195,9 +172,7 @@ class MainWin(QMainWindow):
         self.go_btn.setStyleSheet(f"QPushButton{{background:{C['accent']};color:#000;border-radius:8px;padding:10px 24px;font-weight:600;}}QPushButton:hover{{opacity:0.9;}}QPushButton:disabled{{background:{C['card']};color:{C['muted']};}}")
         bar.addWidget(self.go_btn)
         ol.addLayout(bar)
-        mid.addWidget(out_w)
-        mid.setSizes([180,520])
-        h.addWidget(mid)
+        h.addWidget(out_w)
 
         # ── 右边栏 ──
         right=QTabWidget()
@@ -206,8 +181,19 @@ class MainWin(QMainWindow):
             QTabBar::tab{{background:{C['panel']};color:{C['muted']};padding:8px 16px;font-size:12px;border:none;}}
             QTabBar::tab:selected{{color:{C['accent']};border-bottom:2px solid {C['accent']};}}
         """)
+        # 大纲树
+        self.tree=QTreeWidget()
+        self.tree.setHeaderHidden(True);self.tree.setIndentation(16)
+        self.tree.setStyleSheet(f"""
+            QTreeWidget{{background:transparent;color:{C['text']};border:none;font-size:13px;}}
+            QTreeWidget::item{{padding:4px 8px;border-radius:4px;}}
+            QTreeWidget::item:hover{{background:{C['card']};}}
+            QTreeWidget::item:selected{{background:#2a3a5c;color:{C['accent']};}}
+        """)
+        self.tree.itemClicked.connect(lambda i,_:self._tree_click(i))
+        right.addTab(self.tree,"大纲")
         self.detail_v=QTextBrowser();self.detail_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
-        right.addTab(self.detail_v,"当前内容")
+        right.addTab(self.detail_v,"当前")
         self.char_v=QTextBrowser();self.char_v.setStyleSheet(self.detail_v.styleSheet())
         right.addTab(self.char_v,"角色")
         self.world_v=QTextBrowser();self.world_v.setStyleSheet(self.detail_v.styleSheet())
@@ -279,7 +265,6 @@ class MainWin(QMainWindow):
         for rx in npm.get(0,[]):build(None,rx["id"])
         self.tree.expandAll()
         p=self.repo.get_progress()
-        self.tree_cnt.setText(f"{p['done_sections']}/{p['total_sections']}节")
         self.prog_bar.setValue(int(p.get("progress_pct",0)))
         self.prog_lbl.setText(f"{p['done_sections']}/{p['total_sections']}节 · {p['total_words']:,}字")
         self._status(f"已加载: {r['title']} — {p['total_words']:,}字")
@@ -417,7 +402,6 @@ class MainWin(QMainWindow):
                 ci2.setExpanded(True)
             vi2.setExpanded(True)
         self.repo.conn.commit()
-        self.tree_cnt.setText(f"{total}节")
         self._status("大纲完成 — 切换到写作模式")
 
     def _write_done(self,raw):
