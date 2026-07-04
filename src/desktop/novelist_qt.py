@@ -49,7 +49,7 @@ class StreamThread(QThread):
 P = {
     "idea":    "小说顾问。JSON:{title,premise,genre,hook,world_build,characters:[{name,role,traits}]}",
     "outline": "大纲策划。JSON:{volumes:[{title,chapters:[{title,summary,sections:[{title,summary}]}]}]}。每节8-12字概要。和已有角色世界观一致",
-    "write":   "职业小说家。根据上下文写本节800-2000字。保持设定一致。末尾【本节摘要】一句话",
+    "write":   "你是职业小说家。输出纯正文内容，不要JSON/大纲/章节标题。根据上下文写正文800-2000字。保持设定一致。末尾【本节摘要】一句话",
 }
 
 # ── 主窗口 ──
