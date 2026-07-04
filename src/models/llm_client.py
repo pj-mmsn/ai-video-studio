@@ -82,3 +82,62 @@ def _chat_anthropic(api_key, base_url, model, system, user, temp):
     except urllib.error.HTTPError as e:
         body = e.read().decode()[:500]
         raise RuntimeError(f"API {e.code}: {body}") from e
+
+
+def chat_stream(config: dict, system_prompt: str, user_prompt: str,
+                temperature: float = None, on_chunk=None) -> str:
+    """流式调用 LLM，每收到一段文本就回调 on_chunk(text)"""
+    api_key = config["api_key"]
+    base_url = config["base_url"]
+    model = config["model"]
+    temp = temperature if temperature is not None else config["temperature"]
+
+    body = json.dumps({
+        "model": model,
+        "system": system_prompt,
+        "messages": [{"role": "user", "content": user_prompt}],
+        "max_tokens": 4096,
+        "temperature": temp,
+        "stream": True,
+    }).encode()
+
+    req = urllib.request.Request(
+        f"{base_url}/v1/messages",
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+        },
+        method="POST",
+    )
+
+    full_text = []
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            for line_bytes in resp:
+                line = line_bytes.decode("utf-8", errors="replace").strip()
+                if not line.startswith("data: "):
+                    continue
+                data_str = line[6:]
+                try:
+                    data = json.loads(data_str)
+                except json.JSONDecodeError:
+                    continue
+
+                # content_block_delta: 文本增量
+                delta = data.get("delta", {})
+                if delta.get("type") == "text_delta":
+                    text = delta.get("text", "")
+                    if text:
+                        full_text.append(text)
+                        if on_chunk:
+                            on_chunk(text)
+                # message_stop: 结束
+                if data.get("type") == "message_stop":
+                    break
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()[:500]
+        raise RuntimeError(f"API {e.code}: {body}") from e
+
+    return "".join(full_text)

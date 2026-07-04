@@ -20,18 +20,35 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QTextCursor, QColor
 
 from config import load_config
-from src.models.llm_client import chat as llm_chat
+from src.models.llm_client import chat_stream  # 改为流式
 from src.db.novel_repository import NovelRepository
 
 
-# ---- LLM 线程 ----
+# ---- 流式 LLM 线程 ----
 class LLMThread(QThread):
-    result = pyqtSignal(str)
+    chunk = pyqtSignal(str)      # 每收到一段就发射
+    done = pyqtSignal(str)       # 全部完成
+    error = pyqtSignal(str)
+
     def __init__(self, config, system, user):
-        super().__init__(); self.c = config; self.s = system; self.u = user
+        super().__init__()
+        self.c = config; self.s = system; self.u = user
+        self._paused = False
+
+    def pause(self): self._paused = True
+    def resume(self): self._paused = False
+
     def run(self):
-        try: self.result.emit(llm_chat(self.c, self.s, self.u))
-        except Exception as e: self.result.emit(f"❌ {e}")
+        try:
+            full = []
+            def on_chunk(text):
+                full.append(text)
+                self.chunk.emit(text)
+
+            result = chat_stream(self.c, self.s, self.u, on_chunk=on_chunk)
+            self.done.emit(result or "".join(full))
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 # ---- 三种模式的系统提示词 ----
@@ -212,47 +229,60 @@ class NovelistWindow(QMainWindow):
             self._write_section()
 
     def _llm(self, mode_tag, extra_user=""):
-        """统一 LLM 调用"""
-        # ---- 构思模式：轻量上下文 ----
+        """统一 LLM 调用——流式输出到 content 区域"""
+        # 构思模式
         if mode_tag == "idea":
             idea = self.idea_input.toPlainText().strip()
             if not idea: return
+            self.content.clear()
             self._status("⏳ 生成构思中...")
             self.thread = LLMThread(self.cfg, PROMPTS["idea"], f"故事想法: {idea}")
-            self.thread.result.connect(self._on_idea_result)
+            self.thread.chunk.connect(self._on_chunk)
+            self.thread.done.connect(self._on_idea_result)
+            self.thread.error.connect(lambda e: self.content.setPlainText(f"❌ {e}"))
 
-        # ---- 大纲模式：构思+结构参数 ----
+        # 大纲模式
         elif mode_tag == "outline":
             if not self._idea_data:
                 self.content.setPlainText("请先在构思模式生成故事设定")
                 return
+            self.content.clear()
             self._status("⏳ 生成大纲中...")
-            vols = self.vol_in.text() or "3"
-            chs = self.ch_in.text() or "4"
+            vols = self.vol_in.text() or "3"; chs = self.ch_in.text() or "4"
             user = f"已有设定:\n{json.dumps(self._idea_data, ensure_ascii=False)}\n\n请规划约{vols}卷，每卷约{chs}章的大纲。{extra_user}"
             self.thread = LLMThread(self.cfg, PROMPTS["outline"], user)
-            self.thread.result.connect(self._on_outline_result)
+            self.thread.chunk.connect(self._on_chunk)
+            self.thread.done.connect(self._on_outline_result)
+            self.thread.error.connect(lambda e: self.content.setPlainText(f"❌ {e}"))
 
-        # ---- 写作模式：完整分层上下文 ----
+        # 写作模式
         elif mode_tag == "write":
             if not self.repo or not hasattr(self, '_current_node_id'):
                 self.content.setPlainText("请先生成大纲，然后点击左侧大纲某一节")
                 return
+            self.content.clear()
             self._status("✍️ 写作中...")
             self.act_btn.setEnabled(False)
 
             ctx = self.repo.get_writing_context(self._current_node_id)
-            self.ctx_label.setText(f"🧠 ~{ctx['token_estimate']} tokens | "
-                                   f"角色{len(ctx.get('characters',[]))}个 | "
-                                   f"伏笔{len(ctx.get('threads',[]))}条")
+            self.ctx_label.setText(f"🧠 ~{ctx['token_estimate']} tokens")
             node = self.repo.get_node(self._current_node_id)
             fb = self.fb_input.text().strip(); self.fb_input.clear()
 
             user = f"{ctx['context_text']}\n\n---\n大纲: {node['title']}\n{'反馈: '+fb if fb else ''}\n请写本节:"
             self.thread = LLMThread(self.cfg, PROMPTS["write"], user)
-            self.thread.result.connect(self._on_write_result)
+            self.thread.chunk.connect(self._on_chunk)
+            self.thread.done.connect(self._on_write_result)
+            self.thread.error.connect(lambda e: self.content.setPlainText(f"❌ {e}"))
 
         self.thread.start()
+
+    def _on_chunk(self, text):
+        """实时追加文本到输出区"""
+        c = self.content.textCursor()
+        c.movePosition(QTextCursor.End)
+        c.insertText(text)
+        self.content.ensureCursorVisible()
 
     def _gen_idea(self): self._llm("idea")
     def _gen_outline(self): self._llm("outline")
