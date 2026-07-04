@@ -375,7 +375,7 @@ class MainWin(QMainWindow):
             self._th.error.connect(lambda e:(self.detail_v.setPlainText(f"错误: {e}"),self.go_btn.setEnabled(True)))
             self._th.start()
         elif tag=="write":
-            if not self.repo or not self._nid: self.detail_v.setText(("请先生成大纲，点击左侧某一节");self.go_btn.setEnabled(True);return
+            if not self.repo or not self._nid: self.detail_v.setPlainText("请先生成大纲，点击左侧某一节");self.go_btn.setEnabled(True);return
             self.detail_v.clear();self._status("写作中...");self.go_btn.setEnabled(False)
             ctx=self.repo.get_writing_context(self._nid)
             self._status(f"上下文 ~{ctx['token_estimate']} tokens")
@@ -406,13 +406,13 @@ class MainWin(QMainWindow):
                 u=f"{ctx['context_text']}\n{chap_ctx}\n---\n大纲: {n['title']}\n{fb if fb else ''}\n\n请写本节正文（纯小说内容，不要JSON/大纲/章节标题）:"
             from src.models.llm_client import chat
             self.go_btn.setEnabled(False)
-            self.detail_v.setText(("⏳ 生成中...")
+            self.detail_v.setPlainText("⏳ 生成中...")
             QApplication.processEvents()
             try:
                 raw=chat(self.cfg,P["write"],u)
                 self._write_done(raw)
             except Exception as e:
-                self.detail_v.setText((f"错误: {e}")
+                self.detail_v.setPlainText(f"错误: {e}")
             self.go_btn.setEnabled(True);self._status("")
         self.fb_in.clear()
 
@@ -476,7 +476,7 @@ class MainWin(QMainWindow):
     def _write_done(self,raw):
         self.go_btn.setEnabled(True);self._status("")
         clean=self._clean_output(raw)
-        self.detail_v.setText((clean)
+        self.detail_v.setPlainText(clean)
         if self.repo and self._nid:
             m=re.search(r'【本节摘要】[：:]\s*(.+?)(?:\n|$)',clean)
             self.repo.save_section(self._nid,clean,m.group(1) if m else "")
