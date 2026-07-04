@@ -49,20 +49,27 @@ class ContextTier:
         chars = self.frozen.get("characters", [])
         if chars:
             frozen_parts.append("## 角色设定（严格遵循）")
-            for c in chars[:10]:  # 最多10个角色
-                frozen_parts.append(f"- {c.get('name','')}({c.get('role','')}): {c.get('traits','')}")
+            for c in chars[:10]:
+                name = c.get('key', c.get('name', '?'))
+                traits = c.get('value', c.get('traits', ''))
+                role = c.get('role', '')
+                frozen_parts.append(f"- {name}{'('+role+')' if role else ''}: {traits}")
 
         rules = self.frozen.get("world_rules", [])
         if rules:
             frozen_parts.append("\n## 世界观约束")
             for r in rules[:5]:
-                frozen_parts.append(f"- {r.get('key','')}: {r.get('value','')}")
+                key = r.get('key', '')
+                val = r.get('value', '')
+                frozen_parts.append(f"- {key}: {val}")
 
         threads = self.frozen.get("open_threads", [])
         if threads:
             frozen_parts.append("\n## 待推进剧情线")
             for t in threads[:5]:
-                frozen_parts.append(f"- [{t.get('tags','主线')}] {t.get('description','')}")
+                desc = t.get('value', t.get('description', ''))
+                tags = t.get('tags', '主线')
+                frozen_parts.append(f"- [{tags}] {desc}")
 
         if frozen_parts:
             parts.append("\n".join(frozen_parts))
