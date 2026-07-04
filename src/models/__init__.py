@@ -141,7 +141,7 @@ class LLMClient(BaseModelClient):
         }).encode()
 
         req = urllib.request.Request(
-            f"{self.base_url}/v1/messages",
+            f"{self.base_url}/messages",
             data=body,
             headers={
                 "Content-Type": "application/json",
