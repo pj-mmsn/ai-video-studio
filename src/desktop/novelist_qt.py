@@ -362,8 +362,17 @@ class MainWin(QMainWindow):
             ctx=self.repo.get_writing_context(self._nid)
             self.ctx_lbl.setText(f"上下文 ~{ctx['token_estimate']} tokens");self.ctx_lbl.show()
             n=self.repo.get_node(self._nid)
-            # 有反馈 → 重写模式
-            u=f"{ctx['context_text']}\n---\n大纲: {n['title']}\n{fb if fb else ''}\n请写本节:"
+            # 有反馈 → 带上已有内容一起给模型
+            if fb and n.get("status")=="done":
+                sec=self.repo.conn.execute(
+                    "SELECT content FROM sections WHERE outline_node_id=? ORDER BY id DESC LIMIT 1",
+                    (self._nid,)).fetchone()
+                if sec:
+                    u=f"{ctx['context_text']}\n---\n已有内容:\n{sec['content'][:2000]}\n\n修改意见: {fb}\n\n请根据修改意见重写本节:"
+                else:
+                    u=f"{ctx['context_text']}\n---\n大纲: {n['title']}\n{fb}\n请写本节:"
+            else:
+                u=f"{ctx['context_text']}\n---\n大纲: {n['title']}\n{fb if fb else ''}\n请写本节:"
             self._th=StreamThread(self.cfg,P["write"],u)
             self._th.chunk.connect(self._chunk)
             self._th.done.connect(self._write_done)
