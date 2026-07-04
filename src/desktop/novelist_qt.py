@@ -299,7 +299,23 @@ class MainWin(QMainWindow):
             level=node.get("level","")
             summary=node.get("summary","")
             title=node["title"]
-            if level=="section" and node.get("status")=="done":
+            if level=="chapter":
+                # 展示整章结构
+                sibs=self.repo.conn.execute(
+                    "SELECT title,summary,status FROM outline_nodes WHERE parent_id=? ORDER BY sort_order",
+                    (nid,)).fetchall()
+                if sibs:
+                    lines=[f"<h3 style='color:{C['accent']}'>{title}</h3>"]
+                    if summary: lines.append(f"<p style='color:{C['muted']}'>{summary}</p>")
+                    lines.append("<hr>")
+                    for i,s in enumerate(sibs):
+                        done="✓" if s["status"]=="done" else "○"
+                        color=C['green'] if s["status"]=="done" else C['muted']
+                        lines.append(f"<p style='color:{color}'>{done} 第{i+1}节 {s['title']}: {s.get('summary','')}</p>")
+                    self.detail_v.setHtml("".join(lines))
+                    self.right_tabs.setCurrentIndex(0)
+                    self._status(f"已选: {title} ({len(sibs)}节)")
+            elif level=="section" and node.get("status")=="done":
                 sec=self.repo.conn.execute(
                     "SELECT content,word_count FROM sections WHERE outline_node_id=? ORDER BY id DESC LIMIT 1",
                     (nid,)).fetchone()
