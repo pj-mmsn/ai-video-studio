@@ -363,7 +363,7 @@ class MainWin(QMainWindow):
             ctx=self.repo.get_writing_context(self._nid)
             self._status(f"上下文 ~{ctx['token_estimate']} tokens")
             n=self.repo.get_node(self._nid)
-            # 构建整章上下文：当前章节所有节概览
+            # 构建整章上下文
             chap_ctx=""
             if n:
                 parent_id=n.get("parent_id",0)
@@ -371,24 +371,32 @@ class MainWin(QMainWindow):
                     "SELECT title,summary FROM outline_nodes WHERE parent_id=? ORDER BY sort_order",
                     (parent_id,)).fetchall()
                 if siblings:
-                    chap_ctx="## 本章结构\n"
+                    chap_ctx="\n## 本章结构\n"
                     for i,sib in enumerate(siblings):
                         marker="← 当前" if sib["title"]==n["title"] else ""
                         chap_ctx+=f"- 第{i+1}节 {sib['title']}: {sib['summary'] or ''} {marker}\n"
-            # 有反馈 → 带上已有内容一起给模型
+            fb=self.fb_in.text().strip();self.fb_in.clear()
+            # 有反馈+已有内容 → 带原文一起发给模型
             if fb and n.get("status")=="done":
                 sec=self.repo.conn.execute(
                     "SELECT content FROM sections WHERE outline_node_id=? ORDER BY id DESC LIMIT 1",
                     (self._nid,)).fetchone()
                 if sec:
-                    u=f"{ctx['context_text']}\n---\n已有内容:\n{sec['content'][:2000]}\n\n修改意见: {fb}\n\n请根据修改意见重写本节:"
+                    u=f"{ctx['context_text']}\n{chap_ctx}\n---\n已有内容:\n{sec['content'][:2000]}\n\n修改意见: {fb}\n\n请根据修改意见重写本节（纯小说内容）:"
                 else:
-                    u=f"{ctx['context_text']}\n---\n大纲: {n['title']}\n{fb}\n请写本节:"
+                    u=f"{ctx['context_text']}\n{chap_ctx}\n---\n大纲: {n['title']}\n{fb}\n\n请写本节正文（纯小说内容）:"
             else:
-                u=f"{ctx['context_text']}\n{chap_ctx}\n---\n大纲: {n['title']}\n{fb if fb else ''}\n请写本节:"
-            self._th=StreamThread(self.cfg,P["write"],u)
-            self._th.chunk.connect(self._chunk)
-            self._th.done.connect(self._write_done)
+                u=f"{ctx['context_text']}\n{chap_ctx}\n---\n大纲: {n['title']}\n{fb if fb else ''}\n\n请写本节正文（纯小说内容，不要JSON/大纲/章节标题）:"
+            from src.models.llm_client import chat
+            self.go_btn.setEnabled(False)
+            self.detail_v.setPlainText("⏳ 生成中...")
+            QApplication.processEvents()
+            try:
+                raw=chat(self.cfg,P["write"],u)
+                self._write_done(raw)
+            except Exception as e:
+                self.detail_v.setPlainText(f"错误: {e}")
+            self.go_btn.setEnabled(True);self._status("")
         self.fb_in.clear()
         self._th.error.connect(lambda e:(self.detail_v.setPlainText(f"错误: {e}"),self.go_btn.setEnabled(True)))
         self._th.start()
