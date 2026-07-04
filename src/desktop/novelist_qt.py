@@ -198,7 +198,15 @@ class MainWin(QMainWindow):
         self.right_tabs.addTab(self.char_v,"角色")
         self.world_v=QTextBrowser();self.world_v.setStyleSheet(self.detail_v.styleSheet())
         self.right_tabs.addTab(self.world_v,"世界观")
-        h.addWidget(self.right_tabs)
+        
+        # 中央+右侧之间可拖拽分割
+        splitter=QSplitter(Qt.Horizontal)
+        h.removeWidget(mid)
+        splitter.addWidget(mid)
+        splitter.addWidget(self.right_tabs)
+        splitter.setSizes([600,280])
+        splitter.setStyleSheet(f"QSplitter::handle{{background:{C['border']};width:2px;}}")
+        h.addWidget(splitter)
         self.setCentralWidget(body)
 
     # ═══════════════════════════════════════ 逻辑 ═══════════════════════════════════════
