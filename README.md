@@ -18,7 +18,8 @@
        ▼
 ┌──────────────────────────────────────────────────┐
 │  Stage 1: 🎬 Director（剧本导演）                 │
-│  用推理模型把一句话想法扩展成结构化剧本            │
+│  擅长: 创意推理、结构化输出                        │
+│  推荐: GPT-4o / DeepSeek-R1                      │
 │  输出: 场景列表（视觉/动效提示词 + 台词 + 镜头）   │
 │  📖 StoryBible 上下文注入（角色/场景一致性）       │
 └────────────────┬─────────────────────────────────┘
@@ -26,21 +27,23 @@
                  ▼
 ┌──────────────────────────────────────────────────┐
 │  Stage 2: 🎨 Storyboard（分镜师）                 │
-│  用图像模型把文字描述转成画面                      │
+│  擅长: 文字→图像跨模态生成                         │
+│  推荐: DALL-E 3 / Stable Diffusion               │
 │  输出: 5-8张分镜图 + 镜头语言标注                 │
 └────────────────┬─────────────────────────────────┘
                  │ Shots   ──→  🔍 Review
                  ▼
 ┌──────────────────────────────────────────────────┐
 │  Stage 3: 🎥 Videographer（摄像师）               │
-│  用视频模型把静态图变成动态片段                    │
+│  擅长: 图像→视频动态生成                           │
+│  推荐: RunwayML / Pika / Sora                    │
 │  输出: 视频片段（每场景一段）                     │
 └────────────────┬─────────────────────────────────┘
                  │ Clips   ──→  🔍 Review
                  ▼
 ┌──────────────────────────────────────────────────┐
 │  Stage 4: 🎬 Composer（合成导出）                 │
-│  本地工具：图片序列 → MP4 + 字幕 + 旁白            │
+│  本地工具: 图片序列 → MP4 + 字幕 + 旁白            │
 │  输出: 可播放的视频文件                           │
 └────────────────┬─────────────────────────────────┘
                  │
@@ -145,23 +148,41 @@ pipeline.close()
 
 ## 🔌 模型选用
 
-**入门只需 1 个 Key**——任意 OpenAI 兼容接口（OpenAI / DeepSeek / 智谱 等）：
+核心理念：**不同任务用不同擅长的模型**——推理模型写剧本、图像模型画分镜、视频模型制成片。
+
+### 最小配置（1 个 Key 即可跑通 Stage 1+2+3+4）
 
 ```bash
-# .env 里填一行即可
+# .env —— 一个 OpenAI 兼容 Key 覆盖 Stage1(剧本) + Stage2(分镜图)
 LLM_API_KEY=sk-your-key
-LLM_BASE_URL=https://api.deepseek.com/v1   # 可选，默认 OpenAI
-LLM_MODEL=deepseek-chat                     # 可选，默认 gpt-4o-mini
+LLM_BASE_URL=https://api.deepseek.com/v1    # DeepSeek / OpenAI / 智谱 任选
+LLM_MODEL=deepseek-chat
 ```
 
-| 阶段 | 默认 | 说明 |
-|------|------|------|
-| Stage 1 剧本 | 跟上面走 | 所有 OpenAI 兼容模型都能写剧本 |
-| Stage 2 分镜图 | Mock 占位图 | 真实生图需 DALL-E Key（可选） |
-| Stage 3 视频片段 | Mock 静态帧 | 真实生成需 Runway/Pika Key（可选） |
-| Stage 4 合成导出 | moviepy 本地 | 不需要任何 Key，纯本地工具 |
+| 阶段 | 用哪个模型 | 最小配置下 |
+|------|-----------|-----------|
+| Stage 1 剧本 | GPT-4o / DeepSeek-R1 / DeepSeek-V3 | ✅ 真实 LLM 生成 |
+| Stage 2 分镜图 | DALL-E 3 | ⚠️ 共用 LLM Key 或降级 Mock 占位图 |
+| Stage 3 视频片段 | RunwayML / Pika | ⚠️ 需单独 Key 或降级 Mock 静态帧 |
+| Stage 4 合成导出 | moviepy（本地工具） | ✅ 不需要任何 Key |
 
-> **Mock 模式零成本跑通全流程**，真实 API 按需逐个接入。
+### 完整配置（每个阶段专用模型，效果最佳）
+
+```bash
+# Stage 1: 剧本——推理模型
+DIRECTOR_API_KEY=sk-xxx
+DIRECTOR_MODEL=gpt-4o          # 或 deepseek-reasoner（推理更强）
+
+# Stage 2: 分镜图——图像生成模型
+IMAGE_API_KEY=sk-xxx
+IMAGE_MODEL=dall-e-3           # 或 stable-diffusion-xl（需 Replicate API）
+
+# Stage 3: 视频片段——视频生成模型（可选，目前 API 未完全开放）
+VIDEO_API_KEY=your-key
+VIDEO_MODEL=runway-gen3        # 或 pika-labs
+```
+
+> 建议：先用最小配置跑 Mock 模式体验流程 → 配一个 LLM Key 升级 Stage1 → 有需要再加图像/视频 Key。
 
 ---
 
