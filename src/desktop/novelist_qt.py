@@ -1,10 +1,5 @@
 """
-小说家桌面端 — 多模式循环编辑器
-============================================================
-模式自由切换，每次切换上下文自动适配:
-  💡 构思模式 → 轻量上下文（梗概+角色草案）
-  📋 大纲模式 → 结构上下文（卷章关系+节奏）
-  ✍️ 写作模式 → 完整四层上下文（角色+世界观+前文+大纲）
+小说家桌面端 — 专业写作编辑器
 """
 import sys, os, re, json, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -16,39 +11,326 @@ _qt_bin = os.path.join(_qt_dir, "Qt5", "bin")
 if os.path.exists(_qt_bin): os.environ["PATH"] = _qt_bin + ";" + os.environ.get("PATH", "")
 
 from PyQt5.QtWidgets import *
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QTextCursor, QColor
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize
+from PyQt5.QtGui import QFont, QTextCursor, QColor, QPalette, QIcon
 
 from config import load_config
-from src.models.llm_client import chat_stream  # 改为流式
+from src.models.llm_client import chat_stream
 from src.db.novel_repository import NovelRepository
 
+# ---- 配色 ----
+C = {
+    "bg":           "#0d1117",
+    "surface":      "#161b22",
+    "surface2":     "#21262d",
+    "border":       "#30363d",
+    "accent":       "#7c5ce7",
+    "accent2":      "#6c4fd6",
+    "text":         "#e6edf3",
+    "text2":        "#8b949e",
+    "green":        "#3fb950",
+    "yellow":       "#d2991d",
+    "red":          "#f85149",
+    "blue":         "#58a6ff",
+}
+
+STYLE = f"""
+QMainWindow{{background:{C['bg']}}}
+QTreeWidget{{
+    background:{C['surface']}; color:{C['text']}; border:1px solid {C['border']};
+    border-radius:8px; padding:4px; font-size:13px; outline:none;
+}}
+QTreeWidget::item{{padding:5px 8px; border-radius:4px;}}
+QTreeWidget::item:hover{{background:{C['surface2']};}}
+QTreeWidget::item:selected{{background:{C['accent']}; color:#fff;}}
+QTextEdit, QTextBrowser{{
+    background:{C['bg']}; color:{C['text']}; border:1px solid {C['border']};
+    border-radius:8px; padding:16px; font-size:14px; line-height:1.8;
+    selection-background:{C['accent']};
+}}
+QLineEdit{{
+    background:{C['surface']}; color:{C['text']}; border:1px solid {C['border']};
+    border-radius:6px; padding:8px 12px; font-size:13px;
+}}
+QLineEdit:focus{{border-color:{C['accent']};}}
+QComboBox{{
+    background:{C['surface2']}; color:{C['text']}; border:1px solid {C['border']};
+    border-radius:6px; padding:6px 12px; font-size:13px;
+}}
+QComboBox:hover{{border-color:{C['accent']};}}
+QComboBox::drop-down{{border:none; width:20px;}}
+QProgressBar{{
+    background:{C['surface']}; border:none; height:4px; border-radius:2px;
+}}
+QProgressBar::chunk{{background:{C['green']}; border-radius:2px;}}
+QStatusBar{{background:{C['surface']}; color:{C['text2']}; border-top:1px solid {C['border']}; font-size:12px;}}
+QTabWidget::pane{{background:{C['bg']}; border:1px solid {C['border']}; border-radius:8px;}}
+QTabBar::tab{{
+    background:{C['surface']}; color:{C['text2']}; padding:8px 16px;
+    border:1px solid {C['border']}; border-bottom:none; font-size:13px;
+}}
+QTabBar::tab:selected{{background:{C['bg']}; color:{C['accent']};}}
+QScrollBar:vertical{{
+    background:{C['bg']}; width:8px; border-radius:4px;
+}}
+QScrollBar::handle:vertical{{
+    background:{C['border']}; border-radius:4px; min-height:30px;
+}}
+QScrollBar::handle:vertical:hover{{background:{C['text2']};}}
+QScrollBar::add-line, QScrollBar::sub-line{{height:0;}}
+"""
+
+# ---- 提示词 ----
+PROMPTS = {
+    "idea": """你是小说创作顾问。根据用户想法扩展为创作方案。JSON:
+{"title":"","premise":"30字梗概","genre":"","hook":"核心看点","world_building":"100字世界观",
+ "characters":[{"name":"","role":"主角/配角","traits":"外貌性格"}]}""",
+
+    "outline": """你是小说大纲策划。根据已有设定规划章节结构。JSON:
+{"volumes":[{"title":"","chapters":[{"title":"","summary":"30字概要","sections":3}]}]}
+要求: 有起承转合，和已有角色/世界观一致""",
+
+    "write": """你是职业小说家。根据上下文写本节(800-2000字)。
+保持角色一致、世界观自洽、情节连贯。写完后附【本节摘要】一句话。""",
+}
 
 # ---- 流式 LLM 线程 ----
 class LLMThread(QThread):
-    chunk = pyqtSignal(str)      # 每收到一段就发射
-    done = pyqtSignal(str)       # 全部完成
+    chunk = pyqtSignal(str)
+    done = pyqtSignal(str)
     error = pyqtSignal(str)
-
     def __init__(self, config, system, user):
-        super().__init__()
-        self.c = config; self.s = system; self.u = user
-        self._paused = False
-
-    def pause(self): self._paused = True
-    def resume(self): self._paused = False
-
+        super().__init__(); self.c = config; self.s = system; self.u = user
     def run(self):
         try:
             full = []
-            def on_chunk(text):
-                full.append(text)
-                self.chunk.emit(text)
-
+            def on_chunk(text): full.append(text); self.chunk.emit(text)
             result = chat_stream(self.c, self.s, self.u, on_chunk=on_chunk)
             self.done.emit(result or "".join(full))
-        except Exception as e:
-            self.error.emit(str(e))
+        except Exception as e: self.error.emit(str(e))
+
+
+class TabBtn(QPushButton):
+    """模式切换按钮"""
+    def __init__(self, text, icon):
+        super().__init__(f"  {icon}  {text}")
+        self.setCheckable(True)
+        self.setFixedHeight(40)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet(f"""
+            QPushButton{{
+                background:transparent; color:{C['text2']}; border:none;
+                text-align:left; padding:8px 16px; font-size:13px; font-weight:500;
+                border-left:2px solid transparent;
+            }}
+            QPushButton:hover{{background:{C['surface2']}; color:{C['text']};}}
+            QPushButton:checked{{
+                background:{C['surface2']}; color:{C['accent']}; font-weight:600;
+                border-left:2px solid {C['accent']};
+            }}
+        """)
+
+
+class NovelistWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("AI 小说家")
+        self.resize(1400, 880)
+        self.setMinimumSize(1000, 600)
+        self.cfg = load_config()
+        self.repo = None
+        self._mode = "idea"
+        self._idea_data = {}
+        self._current_node_id = None
+        self._outline_data = []
+
+        self._init_ui()
+        self._status("就绪 — 输入故事想法开始创作")
+
+    def _init_ui(self):
+        # 中央分割器
+        split = QSplitter(Qt.Horizontal)
+
+        # ====== 左侧边栏 ======
+        sidebar = QWidget()
+        sidebar.setFixedWidth(280)
+        sidebar.setStyleSheet(f"background:{C['surface']}; border-right:1px solid {C['border']};")
+        sl = QVBoxLayout(sidebar); sl.setContentsMargins(0,0,0,0); sl.setSpacing(0)
+
+        # Logo
+        logo = QLabel("  📖 AI 小说家")
+        logo.setStyleSheet(f"font-size:18px;font-weight:bold;color:{C['text']}; padding:16px;")
+        sl.addWidget(logo)
+
+        # 项目信息
+        self.project_label = QLabel("  未创建项目")
+        self.project_label.setStyleSheet(f"color:{C['text2']};font-size:12px;padding:4px 16px 12px;")
+        sl.addWidget(self.project_label)
+
+        # 模式切换按钮组
+        sl.addWidget(QLabel(f"  <span style='color:{C['text2']};font-size:11px;'>创作模式</span>"))
+        self.tab_idea = TabBtn("构思", "💡")
+        self.tab_outline = TabBtn("大纲", "📋")
+        self.tab_write = TabBtn("写作", "✍️")
+        self.tab_idea.setChecked(True)
+        for btn in [self.tab_idea, self.tab_outline, self.tab_write]:
+            sl.addWidget(btn)
+
+        # 按钮互斥
+        self._tab_group = QButtonGroup(self)
+        self._tab_group.addButton(self.tab_idea, 0)
+        self._tab_group.addButton(self.tab_outline, 1)
+        self._tab_group.addButton(self.tab_write, 2)
+        self._tab_group.buttonClicked[int].connect(self._switch_mode)
+
+        sl.addSpacing(16)
+
+        # 模式面板（堆叠切换）
+        self.info_stack = QStackedWidget()
+        self.info_stack.setStyleSheet(f"padding:8px 16px;")
+
+        # -- 构思面板 --
+        p1 = QWidget(); l1 = QVBoxLayout(p1); l1.setContentsMargins(0,0,0,0)
+        l1.addWidget(QLabel(f"<span style='color:{C['text2']};font-size:11px;'>故事想法</span>"))
+        self.idea_input = QTextEdit()
+        self.idea_input.setPlaceholderText("输入你的故事想法...\n\n例: 996程序员在深夜加班时觉醒修仙能力")
+        self.idea_input.setMaximumHeight(100)
+        l1.addWidget(self.idea_input)
+        l1.addSpacing(8)
+        self.idea_btn = QPushButton("  🚀  生成构思")
+        self.idea_btn.clicked.connect(lambda: self._llm("idea"))
+        self.idea_btn.setCursor(Qt.PointingHandCursor)
+        self.idea_btn.setStyleSheet(f"""
+            QPushButton{{background:{C['accent']};color:#fff;border:none;border-radius:8px;
+            padding:10px;font-size:13px;font-weight:600;}}
+            QPushButton:hover{{background:{C['accent2']};}}
+            QPushButton:disabled{{background:{C['surface2']};color:{C['text2']};}}
+        """)
+        l1.addWidget(self.idea_btn)
+        l1.addStretch()
+        self.info_stack.addWidget(p1)
+
+        # -- 大纲面板 --
+        p2 = QWidget(); l2 = QVBoxLayout(p2); l2.setContentsMargins(0,0,0,0)
+        l2.addWidget(QLabel(f"<span style='color:{C['text2']};font-size:11px;'>章节结构</span>"))
+        row = QHBoxLayout()
+        row.addWidget(QLabel(f"<span style='color:{C['text2']}'>卷</span>"))
+        self.vol_in = QLineEdit("3"); self.vol_in.setFixedWidth(50); row.addWidget(self.vol_in)
+        row.addWidget(QLabel(f"<span style='color:{C['text2']}'>章/卷</span>"))
+        self.ch_in = QLineEdit("4"); self.ch_in.setFixedWidth(50); row.addWidget(self.ch_in)
+        row.addStretch(); l2.addLayout(row)
+        l2.addSpacing(8)
+        self.outline_btn = QPushButton("  📋  生成大纲")
+        self.outline_btn.clicked.connect(lambda: self._llm("outline"))
+        self.outline_btn.setCursor(Qt.PointingHandCursor)
+        self.outline_btn.setStyleSheet(self.idea_btn.styleSheet())
+        l2.addWidget(self.outline_btn)
+        l2.addStretch()
+        self.info_stack.addWidget(p2)
+
+        # -- 写作面板 --
+        p3 = QWidget(); l3 = QVBoxLayout(p3); l3.setContentsMargins(0,0,0,0)
+        l3.addWidget(QLabel(f"<span style='color:{C['text2']};font-size:11px;'>写作进度</span>"))
+        self.progress_label = QLabel("未开始")
+        self.progress_label.setStyleSheet(f"color:{C['green']};font-size:18px;font-weight:bold;")
+        l3.addWidget(self.progress_label)
+        self.progress_bar = QProgressBar(); self.progress_bar.setTextVisible(False)
+        l3.addWidget(self.progress_bar)
+        l3.addSpacing(8)
+        self.ctx_label = QLabel("")
+        self.ctx_label.setStyleSheet(f"background:{C['bg']};color:{C['yellow']};padding:10px;border-radius:6px;font-size:11px;")
+        self.ctx_label.setWordWrap(True)
+        self.ctx_label.hide()
+        l3.addWidget(self.ctx_label)
+        l3.addStretch()
+        self.info_stack.addWidget(p3)
+
+        sl.addWidget(self.info_stack)
+        sl.addStretch()
+
+        # 底部信息
+        info = QLabel(f"  <span style='color:{C['text2']};font-size:10px;'>模型: {self.cfg['model']}</span>")
+        info.setStyleSheet(f"padding:12px 16px;")
+        sl.addWidget(info)
+
+        split.addWidget(sidebar)
+
+        # ====== 中间: 大纲树 + 输出区 ======
+        mid = QSplitter(Qt.Vertical)
+
+        # 大纲树
+        tree_header = QWidget()
+        th = QHBoxLayout(tree_header); th.setContentsMargins(0,0,0,0)
+        self.tree_title = QLabel("  大纲")
+        self.tree_title.setStyleSheet(f"color:{C['text2']};font-size:12px;font-weight:600;padding:4px 0;")
+        th.addWidget(self.tree_title); th.addStretch()
+        self.tree_count = QLabel("0 节")
+        self.tree_count.setStyleSheet(f"color:{C['text2']};font-size:11px;")
+        th.addWidget(self.tree_count)
+
+        tree_widget = QWidget()
+        tl = QVBoxLayout(tree_widget); tl.setContentsMargins(0,0,0,0); tl.setSpacing(0)
+        tl.addWidget(tree_header)
+        self.tree = QTreeWidget()
+        self.tree.setHeaderHidden(True)
+        self.tree.itemClicked.connect(lambda i,_: self._on_tree_click(i))
+        tl.addWidget(self.tree)
+        mid.addWidget(tree_widget)
+
+        # 输出区
+        output_widget = QWidget()
+        ol = QVBoxLayout(output_widget); ol.setContentsMargins(0,0,0,0); ol.setSpacing(0)
+
+        out_header = QWidget()
+        oh = QHBoxLayout(out_header); oh.setContentsMargins(0,0,0,0)
+        self.out_title = QLabel("  输出")
+        self.out_title.setStyleSheet(f"color:{C['text2']};font-size:12px;font-weight:600;padding:4px 0;")
+        oh.addWidget(self.out_title); oh.addStretch()
+        self.out_status = QLabel("")
+        self.out_status.setStyleSheet(f"color:{C['yellow']};font-size:11px;")
+        oh.addWidget(self.out_status)
+        ol.addWidget(out_header)
+
+        self.content = QTextEdit()
+        self.content.setReadOnly(True)
+        self.content.setFont(QFont("Microsoft YaHei", 13))
+        self.content.setPlaceholderText("输出区 — AI 生成的内容将显示在这里")
+        ol.addWidget(self.content)
+
+        # 底部输入栏
+        input_bar = QHBoxLayout()
+        self.fb_input = QLineEdit()
+        self.fb_input.setPlaceholderText("输入反馈意见后按 Enter...")
+        self.fb_input.returnPressed.connect(self._send_feedback)
+        input_bar.addWidget(self.fb_input)
+
+        self.act_btn = QPushButton("▶ 执行")
+        self.act_btn.clicked.connect(self._execute)
+        self.act_btn.setCursor(Qt.PointingHandCursor)
+        self.act_btn.setStyleSheet(f"""
+            QPushButton{{background:{C['accent']};color:#fff;border:none;border-radius:6px;
+            padding:8px 24px;font-size:13px;font-weight:600;}}
+            QPushButton:hover{{background:{C['accent2']};}}
+            QPushButton:disabled{{background:{C['surface2']};color:{C['text2']};}}
+        """)
+        input_bar.addWidget(self.act_btn)
+        ol.addLayout(input_bar)
+
+        mid.addWidget(output_widget)
+        mid.setSizes([200, 550])
+        split.addWidget(mid)
+
+        # ====== 右侧: 角色/世界观 ======
+        right = QTabWidget()
+        self.char_view = QTextBrowser()
+        right.addTab(self.char_view, "👥 角色")
+        self.world_view = QTextBrowser()
+        right.addTab(self.world_view, "🌍 世界观")
+        split.addWidget(right)
+
+        split.setSizes([280, 800, 280])
+        self.setCentralWidget(split)
+        self.setStyleSheet(STYLE)
 
 
 # ---- 三种模式的系统提示词 ----
@@ -208,146 +490,121 @@ class NovelistWindow(QMainWindow):
         self.setCentralWidget(central)
 
     # ================================================================
-    # 模式切换
+    # 模式切换 + 执行
     # ================================================================
     def _switch_mode(self, idx):
         modes = ["idea", "outline", "write"]
         self._mode = modes[idx]
         self.info_stack.setCurrentIndex(idx)
-        self._status(f"切换到: {self.mode_combo.currentText()}")
+        labels = ["💡 构思模式 — 输入想法扩展为创作方案",
+                  "📋 大纲模式 — 规划章节结构",
+                  "✍️ 写作模式 — 点击左侧大纲开始写作"]
+        self._status(labels[idx])
 
-    # ================================================================
-    # 统一入口：根据当前模式决定发什么
-    # ================================================================
     def _execute(self):
-        mode = self._mode
-        if mode == "idea":
-            self._gen_idea()
-        elif mode == "outline":
-            self._gen_outline()
-        elif mode == "write":
-            self._write_section()
+        if self._mode == "idea": self._llm("idea")
+        elif self._mode == "outline": self._llm("outline")
+        elif self._mode == "write": self._llm("write")
 
-    def _llm(self, mode_tag, extra_user=""):
-        """统一 LLM 调用——流式输出到 content 区域"""
-        # 构思模式
+    def _llm(self, mode_tag):
         if mode_tag == "idea":
             idea = self.idea_input.toPlainText().strip()
             if not idea: return
             self.content.clear()
-            self._status("⏳ 生成构思中...")
+            self.out_status.setText("⏳ 生成中...")
+            self.idea_btn.setEnabled(False)
             self.thread = LLMThread(self.cfg, PROMPTS["idea"], f"故事想法: {idea}")
             self.thread.chunk.connect(self._on_chunk)
-            self.thread.done.connect(self._on_idea_result)
-            self.thread.error.connect(lambda e: self.content.setPlainText(f"❌ {e}"))
+            self.thread.done.connect(lambda r: (self._on_idea_result(r), self.idea_btn.setEnabled(True), self.out_status.setText("")))
+            self.thread.error.connect(lambda e: (self.content.setPlainText(f"❌ {e}"), self.idea_btn.setEnabled(True)))
 
-        # 大纲模式
         elif mode_tag == "outline":
-            if not self._idea_data:
-                self.content.setPlainText("请先在构思模式生成故事设定")
-                return
+            if not self._idea_data: self.content.setPlainText("请先在构思模式生成故事设定"); return
             self.content.clear()
-            self._status("⏳ 生成大纲中...")
+            self.out_status.setText("⏳ 生成中...")
+            self.outline_btn.setEnabled(False)
             vols = self.vol_in.text() or "3"; chs = self.ch_in.text() or "4"
-            user = f"已有设定:\n{json.dumps(self._idea_data, ensure_ascii=False)}\n\n请规划约{vols}卷，每卷约{chs}章的大纲。{extra_user}"
+            user = f"已有设定:\n{json.dumps(self._idea_data, ensure_ascii=False)}\n\n请规划约{vols}卷每卷约{chs}章的大纲。"
             self.thread = LLMThread(self.cfg, PROMPTS["outline"], user)
             self.thread.chunk.connect(self._on_chunk)
-            self.thread.done.connect(self._on_outline_result)
-            self.thread.error.connect(lambda e: self.content.setPlainText(f"❌ {e}"))
+            self.thread.done.connect(lambda r: (self._on_outline_result(r), self.outline_btn.setEnabled(True), self.out_status.setText("")))
+            self.thread.error.connect(lambda e: (self.content.setPlainText(f"❌ {e}"), self.outline_btn.setEnabled(True)))
 
-        # 写作模式
         elif mode_tag == "write":
-            if not self.repo or not hasattr(self, '_current_node_id'):
-                self.content.setPlainText("请先生成大纲，然后点击左侧大纲某一节")
-                return
+            if not self.repo or not self._current_node_id:
+                self.content.setPlainText("请先生成大纲，然后点击左侧大纲某一节"); return
             self.content.clear()
-            self._status("✍️ 写作中...")
+            self.out_status.setText("✍️ 写作中...")
             self.act_btn.setEnabled(False)
-
             ctx = self.repo.get_writing_context(self._current_node_id)
-            self.ctx_label.setText(f"🧠 ~{ctx['token_estimate']} tokens")
+            self.ctx_label.setText(f"🧠 ~{ctx['token_estimate']} tokens | "
+                                   f"角色{len(ctx.get('characters',[]))} | 伏笔{len(ctx.get('threads',[]))}")
+            self.ctx_label.show()
             node = self.repo.get_node(self._current_node_id)
             fb = self.fb_input.text().strip(); self.fb_input.clear()
-
             user = f"{ctx['context_text']}\n\n---\n大纲: {node['title']}\n{'反馈: '+fb if fb else ''}\n请写本节:"
             self.thread = LLMThread(self.cfg, PROMPTS["write"], user)
             self.thread.chunk.connect(self._on_chunk)
-            self.thread.done.connect(self._on_write_result)
-            self.thread.error.connect(lambda e: self.content.setPlainText(f"❌ {e}"))
-
+            self.thread.done.connect(lambda r: (self._on_write_result(r), self.act_btn.setEnabled(True), self.out_status.setText("✅ 完成")))
+            self.thread.error.connect(lambda e: (self.content.setPlainText(f"❌ {e}"), self.act_btn.setEnabled(True)))
         self.thread.start()
 
     def _on_chunk(self, text):
-        """实时追加文本到输出区"""
-        c = self.content.textCursor()
-        c.movePosition(QTextCursor.End)
-        c.insertText(text)
+        c = self.content.textCursor(); c.movePosition(QTextCursor.End); c.insertText(text)
         self.content.ensureCursorVisible()
-
-    def _gen_idea(self): self._llm("idea")
-    def _gen_outline(self): self._llm("outline")
-    def _write_section(self): self._llm("write")
 
     # ================================================================
     # 结果处理
     # ================================================================
     def _on_idea_result(self, raw):
-        data = self._parse_json(raw)
-        self._idea_data = data
+        data = self._parse_json(raw); self._idea_data = data
         chars = "\n".join(f"  {c['name']}({c.get('role','')}): {c.get('traits','')}" for c in data.get("characters", []))
         self.content.setHtml(f"""
-        <h2>{data.get('title','未命名')}</h2>
-        <p><b>{data.get('genre','')}</b> | 看点: {data.get('hook','')}</p>
-        <blockquote>{data.get('premise','')}</blockquote>
-        <h3>世界观</h3><p>{data.get('world_building','')}</p>
-        <h3>角色</h3><pre>{chars}</pre>
+        <h2 style='color:{C['accent']}'>{data.get('title','未命名')}</h2>
+        <p><b>{data.get('genre','')}</b> · 看点: {data.get('hook','')}</p>
+        <blockquote style='color:{C['text2']};border-left:3px solid {C['accent']};padding-left:12px;'>{data.get('premise','')}</blockquote>
+        <h3>🌍 世界观</h3><p>{data.get('world_building','')}</p>
+        <h3>👥 角色</h3><pre>{chars}</pre>
         """)
         self.char_view.setText(chars)
         self.world_view.setText(data.get('world_building',''))
-        self._status("✅ 构思完成——切换到大纲模式")
-
-        # 立即初始化数据库
-        if not self.repo:
-            self._init_db(data)
+        self.project_label.setText(f"  📖 {data.get('title','未命名')}")
+        self._status("✅ 构思完成 — 切换到大纲模式继续")
+        if not self.repo: self._init_db(data)
 
     def _on_outline_result(self, raw):
         data = self._parse_json(raw)
         self.tree.clear()
         if not self.repo: self._init_db(self._idea_data)
-
-        # 清除旧大纲节点重建
         self.repo.conn.execute("DELETE FROM outline_nodes WHERE novel_id=?", (self.repo.novel_id,))
-        sort = 0
-        self._outline_data = []
+        sort = 0; total_sections = 0
         for v_idx, vol in enumerate(data.get("volumes", []), 1):
             vid = self._add_db_node(None, "volume", sort, f"第{v_idx}卷 {vol.get('title','')}", ""); sort += 1
             vol_item = QTreeWidgetItem(self.tree, [f"📘 第{v_idx}卷 {vol.get('title','')}"])
             vol_item.setData(0, Qt.UserRole, vid)
             for c_idx, ch in enumerate(vol.get("chapters", []), 1):
-                cid = self._add_db_node(vid, "chapter", sort, f"第{v_idx}卷第{c_idx}章 {ch.get('title','')}", ch.get("summary",""))
-                sort += 1
+                cid = self._add_db_node(vid, "chapter", sort, f"第{c_idx}章 {ch.get('title','')}", ch.get("summary","")); sort += 1
                 ch_item = QTreeWidgetItem(vol_item, [f"📄 第{c_idx}章 {ch.get('title','')}"])
                 ch_item.setData(0, Qt.UserRole, cid)
                 for s_idx in range(ch.get("sections", 3)):
-                    sid = self._add_db_node(cid, "section", sort, f"第{v_idx}卷第{c_idx}章第{s_idx+1}节", ""); sort += 1
+                    sid = self._add_db_node(cid, "section", sort, f"第{s_idx+1}节", ""); sort += 1; total_sections += 1
                     QTreeWidgetItem(ch_item, [f"📝 第{s_idx+1}节"]).setData(0, Qt.UserRole, sid)
                 ch_item.setExpanded(True)
             vol_item.setExpanded(True)
         self.repo.conn.commit()
-        self.content.setPlainText("✅ 大纲已生成——切换到写作模式，点击左侧某一节开始写")
-        self._status("✅ 大纲完成——切换到写作模式")
+        self.tree_count.setText(f"{total_sections} 节")
+        self._status("✅ 大纲完成 — 切换到写作模式，点击左侧开始")
 
     def _on_write_result(self, raw):
-        self.content.setPlainText(raw)
-        self.act_btn.setEnabled(True)
-        if self.repo and hasattr(self, '_current_node_id'):
+        if self.repo and self._current_node_id:
             m = re.search(r'【本节摘要】[：:]\s*(.+?)(?:\n|$)', raw)
             self.repo.save_section(self._current_node_id, raw, m.group(1) if m else "")
             self.repo.update_node_status(self._current_node_id, "done")
             self._refresh_tree_status()
             p = self.repo.get_progress()
             self.progress_bar.setValue(int(p.get("progress_pct", 0)))
-            self.progress_label.setText(f"{p['done_sections']}/{p['total_sections']} 节 | {p['total_words']:,} 字")
+            self.progress_label.setText(f"{p['done_sections']}/{p['total_sections']} 节")
+            self._status(f"✅ 本节完成 — {p['total_words']:,} 字")
 
     # ================================================================
     # 辅助
@@ -374,8 +631,7 @@ class NovelistWindow(QMainWindow):
         if nid and self.repo:
             self._current_node_id = nid
             node = self.repo.get_node(nid)
-            if node:
-                self._status(f"已选: {node['title']}")
+            if node: self._status(f"已选: {node['title']}")
 
     def _refresh_tree_status(self):
         if not self.repo: return
@@ -385,13 +641,12 @@ class NovelistWindow(QMainWindow):
             if nid:
                 node = next((n for n in data if n["id"] == nid), None)
                 if node and node["status"] == "done":
-                    item.setForeground(0, QColor("#00d2a0"))
+                    item.setForeground(0, QColor(C["green"]))
             for i in range(item.childCount()): update(item.child(i))
         for i in range(self.tree.topLevelItemCount()): update(self.tree.topLevelItem(i))
 
     def _send_feedback(self):
-        if self._mode == "write":
-            self._write_section()
+        if self._mode == "write": self._llm("write")
 
     def _parse_json(self, raw):
         try:
@@ -401,7 +656,7 @@ class NovelistWindow(QMainWindow):
             return json.loads(js.strip())
         except: return {}
 
-    def _status(self, msg): self.statusBar().showMessage(msg)
+    def _status(self, msg): self.statusBar().showMessage(f"  {msg}")
 
     def _input_style(self):
         return "background:#0a0a14;color:#d0d0d8;padding:8px;border:1px solid #2a2a3a;border-radius:6px;"
