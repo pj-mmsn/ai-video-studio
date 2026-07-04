@@ -287,11 +287,16 @@ class MainWin(QMainWindow):
         modes=["idea","outline","write"];self._mode=modes[idx]
         self.stack.setCurrentIndex(idx)
         for i,b in enumerate(self.btns):b.setChecked(i==idx)
-        # 切换时自动在右侧展示已有内容
+        # 构思/大纲模式隐藏底部输出区，内容展示在右侧
+        is_write = idx==2
+        self.content.setVisible(is_write)
+        self.out_status.setVisible(is_write)
+        self.fb_in.setPlaceholderText("修改意见 (Enter 执行)..." if is_write else "修改意见 (Enter 执行)...")
+        self.go_btn.setText("执行" if is_write else "执行")
         if idx==0 and self._idea: self._show_idea()
         elif idx==1 and self._idea: self._show_idea()
-        elif idx==2:
-            tree=self.repo.get_outline_tree() if self.repo else []
+        elif idx==2 and self.repo:
+            tree=self.repo.get_outline_tree()
             if tree:
                 done=[n for n in tree if n.get("status")=="done"]
                 total=len([n for n in tree if n.get("level")=="section"])
@@ -322,7 +327,7 @@ class MainWin(QMainWindow):
     def _go(self, tag):
         fb=self.fb_in.text().strip()
         if tag=="idea":
-            self.content.clear();self.out_status.setText("生成中...");self.go_btn.setEnabled(False)
+            self.detail_v.clear();self.out_status.setText("生成中...");self.go_btn.setEnabled(False)
             # 有构思+反馈 → 打磨模式
             if self._idea and fb:
                 u=f"现有设定:\n{json.dumps(self._idea,ensure_ascii=False)}\n\n修改建议: {fb}\n\n请根据建议修改，返回完整JSON。"
@@ -334,8 +339,8 @@ class MainWin(QMainWindow):
             self._th.chunk.connect(self._chunk)
             self._th.done.connect(self._idea_done)
         elif tag=="outline":
-            if not self._idea: self.content.setPlainText("请先生成构思");self.go_btn.setEnabled(True);return
-            self.content.clear();self.out_status.setText("生成中...");self.go_btn.setEnabled(False)
+            if not self._idea: self.go_btn.setEnabled(True);return
+            self.detail_v.clear();self.out_status.setText("生成中...");self.go_btn.setEnabled(False)
             # 注入 Tier4: 角色+世界观
             ctx_parts=[json.dumps(self._idea,ensure_ascii=False)]
             chars=self._idea.get("characters",[])
@@ -376,8 +381,12 @@ class MainWin(QMainWindow):
         self._th.start()
 
     def _chunk(self,t):
-        c=self.content.textCursor();c.movePosition(QTextCursor.End);c.insertText(t)
-        self.content.ensureCursorVisible()
+        if self._mode=="write":
+            c=self.content.textCursor();c.movePosition(QTextCursor.End);c.insertText(t)
+            self.content.ensureCursorVisible()
+        else:
+            c=self.detail_v.textCursor();c.movePosition(QTextCursor.End);c.insertText(t)
+            self.detail_v.ensureCursorVisible()
 
     def _idea_done(self,raw):
         self.go_btn.setEnabled(True);self.out_status.setText("")
