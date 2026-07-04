@@ -17,31 +17,31 @@
        │
        ▼
 ┌──────────────────────────────────────────────────┐
-│  Stage 1: 🎬 Director（导演 + Few-shot Prompt）   │
-│  模型: GPT-4o / DeepSeek-R1（推理模型）           │
-│  输出: 结构化剧本（视觉/动效提示词 + 台词 + 镜头） │
+│  Stage 1: 🎬 Director（剧本导演）                 │
+│  用推理模型把一句话想法扩展成结构化剧本            │
+│  输出: 场景列表（视觉/动效提示词 + 台词 + 镜头）   │
 │  📖 StoryBible 上下文注入（角色/场景一致性）       │
 └────────────────┬─────────────────────────────────┘
-                 │ Script  ──→  🔍 Reviewer（审查评分）
+                 │ Script  ──→  🔍 Review
                  ▼
 ┌──────────────────────────────────────────────────┐
 │  Stage 2: 🎨 Storyboard（分镜师）                 │
-│  模型: DALL-E 3 / Stable Diffusion（图像模型）    │
+│  用图像模型把文字描述转成画面                      │
 │  输出: 5-8张分镜图 + 镜头语言标注                 │
 └────────────────┬─────────────────────────────────┘
-                 │ Shots   ──→  🔍 Reviewer（审查评分）
+                 │ Shots   ──→  🔍 Review
                  ▼
 ┌──────────────────────────────────────────────────┐
 │  Stage 3: 🎥 Videographer（摄像师）               │
-│  模型: RunwayML / Pika / Sora（视频模型）         │
+│  用视频模型把静态图变成动态片段                    │
 │  输出: 视频片段（每场景一段）                     │
 └────────────────┬─────────────────────────────────┘
-                 │ Clips   ──→  🔍 Reviewer（最终审查）
+                 │ Clips   ──→  🔍 Review
                  ▼
 ┌──────────────────────────────────────────────────┐
 │  Stage 4: 🎬 Composer（合成导出）                 │
-│  工具: moviepy / ffmpeg                           │
-│  输出: video.mp4 + 硬字幕 + 旁白音频              │
+│  本地工具：图片序列 → MP4 + 字幕 + 旁白            │
+│  输出: 可播放的视频文件                           │
 └────────────────┬─────────────────────────────────┘
                  │
                  ▼
@@ -98,41 +98,20 @@ ai-video-studio/
 
 ## 🚀 快速开始
 
-### 1. 一键体验（无需 API Key）
-
 ```bash
+# 1. 安装依赖
 cd ai-video-studio
 pip install -r requirements.txt
+
+# 2. 一键体验（Mock 模式，零配置，零成本）
 python examples/demo.py
-```
 
-### 2. 命令行模式
-
-```bash
-# Mock 模式
-python -m src.cli.app --idea "猫在太空站冒险" --style anime --mock
-
-# 断点续传
-python -m src.cli.app --resume proj_1234567890
-
-# 完整模式（需配置 .env）
-python -m src.cli.app --idea "赛博朋克爱情故事" --style cinematic --strictness 8
-
-# 查看帮助
-python -m src.cli.app --help
-```
-
-### 3. 交互模式
-
-```bash
-python -m src.cli.app
-```
-
-### 4. 配置真实 API
-
-```bash
+# 3. 接真实 API（可选——只填一行就能让 Stage1 用上真 LLM）
 cp .env.example .env
-# 编辑 .env，填入 LLM_API_KEY
+# 编辑 .env → 填 LLM_API_KEY
+
+# 4. 命令行运行
+python -m src.cli.app --idea "猫在太空站冒险" --style anime
 ```
 
 ---
@@ -164,31 +143,25 @@ pipeline.close()
 
 ---
 
-## 🔌 支持的模型
+## 🔌 模型选用
 
-### Stage 1: 剧本导演
+**入门只需 1 个 Key**——任意 OpenAI 兼容接口（OpenAI / DeepSeek / 智谱 等）：
 
-| 模型 | 特点 |
-|------|------|
-| GPT-4o | 创意最佳，指令遵循好 |
-| DeepSeek-R1 | 推理强，性价比高 |
-| DeepSeek-V3 | 中文优秀 |
-| Claude 3.5 Sonnet | 长文本连贯 |
+```bash
+# .env 里填一行即可
+LLM_API_KEY=sk-your-key
+LLM_BASE_URL=https://api.deepseek.com/v1   # 可选，默认 OpenAI
+LLM_MODEL=deepseek-chat                     # 可选，默认 gpt-4o-mini
+```
 
-### Stage 2: 分镜师
+| 阶段 | 默认 | 说明 |
+|------|------|------|
+| Stage 1 剧本 | 跟上面走 | 所有 OpenAI 兼容模型都能写剧本 |
+| Stage 2 分镜图 | Mock 占位图 | 真实生图需 DALL-E Key（可选） |
+| Stage 3 视频片段 | Mock 静态帧 | 真实生成需 Runway/Pika Key（可选） |
+| Stage 4 合成导出 | moviepy 本地 | 不需要任何 Key，纯本地工具 |
 
-| 模型 | 特点 |
-|------|------|
-| DALL-E 3 | 自然语言理解最强 |
-| Stable Diffusion XL | 可控性最好（需 Replicate/Fal.ai） |
-
-### Stage 3+4: 摄像+合成
-
-| 工具 | 用途 |
-|------|------|
-| RunwayML Gen-3 | 图生视频 |
-| moviepy | 图片序列 → MP4 |
-| edge-tts | 对话 → 语音（免费） |
+> **Mock 模式零成本跑通全流程**，真实 API 按需逐个接入。
 
 ---
 
