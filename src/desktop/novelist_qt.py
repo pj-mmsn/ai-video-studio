@@ -145,7 +145,14 @@ class NovelistWindow(QMainWindow):
         self._outline_data = []
 
         self._init_ui()
-        self._status("就绪 — 输入故事想法开始创作")
+        self._status("就绪 — 扫描已有项目...")
+
+        # 扫描已有项目
+        existing = self._scan_projects()
+        if existing:
+            self._show_project_dialog(existing)
+        else:
+            self._status("就绪 — 输入故事想法开始创作")
 
     def _init_ui(self):
         # 中央分割器
@@ -490,8 +497,116 @@ class NovelistWindow(QMainWindow):
         self.setCentralWidget(central)
 
     # ================================================================
-    # 模式切换 + 执行
+    # 项目管理
     # ================================================================
+    def _scan_projects(self) -> list[dict]:
+        """扫描 output/novels/ 下所有已有项目"""
+        import glob
+        projects = []
+        for db_path in glob.glob("output/novels/*/novel.db"):
+            pid = db_path.split("/")[-2] if "/" in db_path else db_path.split("\\")[-2]
+            try:
+                import sqlite3
+                conn = sqlite3.connect(db_path)
+                row = conn.execute("SELECT title, genre, total_words, status FROM novels WHERE id=?", (pid,)).fetchone()
+                conn.close()
+                if row:
+                    projects.append({"id": pid, "title": row[0], "genre": row[1], "words": row[2], "status": row[3]})
+            except: pass
+        return projects
+
+    def _show_project_dialog(self, projects: list[dict]):
+        """启动时显示已有项目列表，可选新建或继续"""
+        msg = QDialog(self)
+        msg.setWindowTitle("选择项目")
+        msg.setFixedSize(500, 400)
+        msg.setStyleSheet(f"background:{C['bg']};color:{C['text']};")
+
+        layout = QVBoxLayout(msg)
+        layout.addWidget(QLabel(f"<h2 style='color:{C['accent']}'>📖 已有项目</h2>"))
+
+        lst = QListWidget()
+        lst.setStyleSheet(f"QListWidget{{background:{C['surface']};border:1px solid {C['border']};border-radius:8px;font-size:14px;}} QListWidget::item{{padding:10px;}}")
+        for p in projects:
+            item = QListWidgetItem(f"  📖 {p['title']}  ·  {p['genre']}  ·  {p['words']:,}字  ·  {p['status']}")
+            item.setData(Qt.UserRole, p["id"])
+            lst.addItem(item)
+
+        new_item = QListWidgetItem(f"  🆕  新建项目")
+        new_item.setData(Qt.UserRole, "__new__")
+        lst.addItem(new_item)
+        lst.setCurrentRow(len(projects))  # 默认选新建
+        layout.addWidget(lst)
+
+        btn_row = QHBoxLayout()
+        ok = QPushButton("  确  定  ")
+        ok.clicked.connect(msg.accept)
+        ok.setStyleSheet(f"background:{C['accent']};color:#fff;padding:10px 30px;border-radius:8px;font-weight:bold;")
+        cancel = QPushButton("  取  消  ")
+        cancel.clicked.connect(msg.reject)
+        cancel.setStyleSheet(f"background:{C['surface2']};color:{C['text']};padding:10px 30px;border-radius:8px;")
+        btn_row.addStretch(); btn_row.addWidget(cancel); btn_row.addWidget(ok)
+        layout.addLayout(btn_row)
+
+        if msg.exec_() == QDialog.Accepted and lst.currentItem():
+            pid = lst.currentItem().data(Qt.UserRole)
+            if pid == "__new__":
+                self._status("就绪 — 输入故事想法开始创作")
+            else:
+                self._load_project(pid)
+
+    def _load_project(self, pid: str):
+        """加载已有项目"""
+        self.repo = NovelRepository(pid)
+        project = self.repo.conn.execute("SELECT * FROM novels WHERE id=?", (pid,)).fetchone()
+        if not project:
+            self._status("❌ 项目加载失败"); return
+
+        # 恢复构思数据
+        chars = self.repo.conn.execute("SELECT * FROM characters WHERE novel_id=?", (pid,)).fetchall()
+        bible = self.repo.conn.execute("SELECT * FROM story_bible WHERE project_id=?", (pid,)).fetchall()
+
+        self._idea_data = {
+            "title": project["title"], "genre": project["genre"],
+            "premise": project["premise"],
+            "world_building": bible[0]["value"] if bible else "",
+            "characters": [{"name": c["name"], "role": c["role"], "traits": c["traits"]} for c in chars],
+        }
+
+        self.project_label.setText(f"  📖 {project['title']}")
+        self.char_view.setText("\n".join(f"{c['name']}({c['role']}): {c['traits']}" for c in chars))
+        self.world_view.setText(bible[0]["value"] if bible else "")
+
+        # 恢复大纲树
+        self.tree.clear()
+        data = self.repo.get_outline_tree()
+        nodes_by_pid = {}
+        for n in data:
+            nodes_by_pid.setdefault(n.get("parent_id") or 0, []).append(n)
+
+        def build(parent, pid):
+            for n in nodes_by_pid.get(pid, []):
+                icon = {"volume":"📘","chapter":"📄","section":"📝"}.get(n["level"],"")
+                done = "✅ " if n["status"] == "done" else ""
+                item = QTreeWidgetItem(parent or self.tree, [f"{done}{icon} {n['title']}"])
+                item.setData(0, Qt.UserRole, n["id"])
+                if n["status"] == "done": item.setForeground(0, QColor(C["green"]))
+                build(item, n["id"])
+
+        for r in nodes_by_pid.get(0, []): build(None, r["id"])
+        self.tree.expandAll()
+
+        # 恢复进度
+        p = self.repo.get_progress()
+        self.tree_count.setText(f"{p['total_sections']} 节")
+        self.progress_bar.setValue(int(p.get("progress_pct", 0)))
+        self.progress_label.setText(f"{p['done_sections']}/{p['total_sections']} 节")
+        self._status(f"✅ 已加载: {project['title']} — {p['total_words']:,} 字")
+
+        self._mode = "write"
+        self.tab_write.setChecked(True)
+        self.info_stack.setCurrentIndex(2)
+        self.out_title.setText(f"  📖 {project['title']}")
     def _switch_mode(self, idx):
         modes = ["idea", "outline", "write"]
         self._mode = modes[idx]
