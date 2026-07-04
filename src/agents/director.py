@@ -169,37 +169,43 @@ class DirectorAgent:
         return script
 
     def _create_mock_script(self, idea: str, style: str = "cinematic") -> Script:
-        """Mock 模式：生成示例剧本（无需 API Key）"""
-        print(f"🎬 [Director-Mock] 生成示例剧本...")
-        print(f"   想法: {idea}")
-        print(f"   风格: {style}")
+        """Mock 模式：使用模板生成个性化剧本（无需 API Key）"""
+        print(f"🎬 [Director-Mock] 生成个性化剧本...")
+        print(f"   想法: {idea}  风格: {style}")
+
+        # 从 idea 中提取关键词
+        import re
+        words = re.split(r'[，,、\s在的与和了去来到着]', idea)
+        keywords = [w.strip() for w in words if len(w.strip()) >= 2][:3]
+        subject = keywords[-1] if keywords else idea[:10]
+        location_desc = f"一个{idea}的世界" if len(idea) < 20 else idea
 
         scenes = [
-            Scene(1, "开场：主角登场，环境氛围铺垫",
-                  f"A wide establishing shot of {idea}, {style} style, dramatic lighting, highly detailed",
+            Scene(1, f"开场：{subject}登场，{style}风格的环境氛围",
+                  f"A wide establishing shot introducing {subject}, {style} style, detailed environment showing {location_desc}, dramatic lighting, highly detailed",
                   "镜头缓缓推进，从远景到中景，引入主角",
                   4, "", "远景 → 中景"),
-            Scene(2, "冲突/转折：意外发生",
-                  f"The protagonist encounters an unexpected challenge in {idea}, {style} style, dynamic composition, tension",
-                  "快速切换到特写，表现主角的惊讶表情",
-                  3, "（惊讶）这是...？", "特写"),
-            Scene(3, "发展：主角做出决定",
-                  f"The protagonist takes action, {idea}, {style} style, motion blur, intense",
+            Scene(2, f"转折：{subject}遇到意外挑战",
+                  f"{subject} encounters an unexpected challenge, {style} style, dynamic composition, tension in the air, close-up on {subject}'s face",
+                  "快速切换到特写，表现主角的反应",
+                  3, f"（惊讶）这是...？", "特写"),
+            Scene(3, f"发展：{subject}在{style}氛围中做出关键选择",
+                  f"{subject} makes a crucial decision, {style} style, motion blur, intense atmosphere, {location_desc} in background",
                   "跟拍镜头，跟随主角的动作",
                   5, "", "跟拍"),
-            Scene(4, "高潮：关键对决/揭示",
-                  f"The climactic moment of {idea}, {style} style, epic composition, dramatic light rays",
+            Scene(4, f"高潮：{subject}面对核心挑战的关键时刻",
+                  f"The climactic moment of {idea}, {style} style, epic composition, dramatic light rays, {subject} at center, emotional peak",
                   "慢动作，旋转镜头围绕主角",
-                  6, "（坚定）我必须这样做！", "360°环绕"),
-            Scene(5, "结尾：新平衡，留下记忆点",
-                  f"The final scene of {idea}, {style} style, peaceful yet memorable, golden hour lighting",
+                  6, f"（坚定）这就是我的选择！", "360°环绕"),
+            Scene(5, f"结尾：{subject}的故事留下余韵",
+                  f"The final scene of {idea}, {style} style, peaceful yet memorable, golden hour lighting, {subject} in the distance, hopeful atmosphere",
                   "镜头缓缓拉远，主角的身影逐渐变小",
                   5, "", "远景拉远"),
         ]
 
         script = Script(
-            title=f"《{idea[:15]}...》" if len(idea) > 15 else f"《{idea}》",
-            logline=f"一个关于{idea}的故事。",
+            title=f"《{idea[:15]}》" if len(idea) <= 15 else f"《{idea[:12]}...》",
+            logline=f"一个关于{idea}的故事——在{style}风格下展开。",
             scenes=scenes,
         )
         self._print_script(script)

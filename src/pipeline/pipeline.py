@@ -22,6 +22,8 @@ from src.agents.videographer import VideographerAgent
 from src.agents.reviewer import ReviewerAgent, ReviewResult
 from src.db.repository import ProjectRepository, StageStatus
 from src.context.bible import StoryBible
+from src.tools.composer import VideoComposer
+from src.logging_config import info, warn, debug
 from config import config
 
 
@@ -35,6 +37,7 @@ class Production:
     storyboard: Storyboard = None
     clips: list[VideoClip] = field(default_factory=list)
     reviews: list[ReviewResult] = field(default_factory=list)
+    composed_video_path: str = ""       # Stage 4 合成后的视频路径
     created_at: str = ""
     max_retries: int = 3
 
@@ -206,20 +209,28 @@ class VideoPipeline:
         self.repo.update_project(status="done", current_stage=len(production.clips))
         self._save_production(production)
 
+        # ---- Stage 4: 视频合成（图片 → MP4）----
+        try:
+            composer = VideoComposer()
+            video_path = composer.compose(production.storyboard, add_subtitles=True)
+            if video_path:
+                production.composed_video_path = video_path
+                info(f"🎬 最终视频: {video_path}")
+        except Exception as e:
+            warn(f"视频合成跳过: {e}")
+
         # 打印审查总结
         bible_text = self.bible.get_context_text()
         if bible_text:
-            print(f"\n📖 故事圣经 ({self.bible.get_character_count()} 个角色, 跨场景一致)")
+            info(f"\n📖 故事圣经 ({self.bible.get_character_count()} 个角色, 跨场景一致)")
 
-        print("\n" + "=" * 60)
-        print("🎉 制作完成！")
-        print(f"   项目: {self.project_id}")
-        print(f"   数据库: {self.repo.db_path}")
-        print(f"   {production.progress_report()}")
+        info(f"\n🎉 制作完成！")
+        info(f"   项目: {self.project_id}")
+        info(f"   数据库: {self.repo.db_path}")
+        info(f"   {production.progress_report()}")
         if self.reviewer:
-            print(f"   {self.reviewer.summary()}")
-        print(f"   产出目录: {config.output_dir}")
-        print("=" * 60)
+            info(f"   {self.reviewer.summary()}")
+        info(f"   产出目录: {config.output_dir}")
 
         self.repo.close()
         return production

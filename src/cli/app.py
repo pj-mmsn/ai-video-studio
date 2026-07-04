@@ -1,85 +1,110 @@
 """
-AI 视频工作室 — CLI 入口 + Demo
-============================================================
+CLI — 支持交互式和命令行参数两种模式
+
+交互式: python -m src.cli.app
+命令行: python -m src.cli.app --idea "猫在太空站" --style anime --output my_video
 """
-import asyncio
+import argparse
 import sys
 import os
+import time
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from src.pipeline.pipeline import VideoPipeline
-from rich.console import Console
-from rich.panel import Panel
-from rich.prompt import Prompt
-from rich.table import Table
-
-console = Console()
-
-STYLES = {
-    "1": ("cinematic", "电影感"),
-    "2": ("anime", "日式动漫"),
-    "3": ("3d", "3D 渲染"),
-    "4": ("watercolor", "水彩画风"),
-    "5": ("pixel-art", "像素艺术"),
-    "6": ("oil-painting", "油画风格"),
-}
+from src.logging_config import info, error as log_error
 
 
-def main():
-    console.print(Panel.fit(
-        "🎬 AI 视频工作室\n"
-        "多模型协作：推理模型写剧本 → 图像模型画分镜 → 视频模型制成片",
-        title="AI Video Studio",
-        border_style="cyan",
-    ))
+def parse_args():
+    p = argparse.ArgumentParser(
+        description="🎬 AI 视频工作室 — 多模型协作视频制作",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+  python -m src.cli.app --idea "一只猫在太空站冒险" --style anime
+  python -m src.cli.app -i "宇航员发现外星花朵" -s cinematic --mock
+  python -m src.cli.app --resume my_project_2024
+        """
+    )
+    p.add_argument("-i", "--idea", default=None,
+                   help="视频创意（一句话描述）")
+    p.add_argument("-s", "--style", default="cinematic",
+                   choices=["cinematic", "anime", "3d", "watercolor", "pixel-art", "oil-painting"],
+                   help="视觉风格")
+    p.add_argument("--mock", action="store_true", default=False,
+                   help="Mock 模式（无需 API Key）")
+    p.add_argument("--no-review", action="store_true", default=False,
+                   help="禁用审查员")
+    p.add_argument("--strictness", type=int, default=6,
+                   help="审查严格度 (1-10)")
+    p.add_argument("--project-id", default=None,
+                   help="项目 ID（用于断点续传）")
+    p.add_argument("--resume", default=None,
+                   help="恢复指定项目 ID 的未完成任务")
+    p.add_argument("--director-model", default="gpt-4o",
+                   help="剧本模型")
+    p.add_argument("-o", "--output", default=None,
+                   help="输出目录")
+    return p.parse_args()
 
-    # 选择风格
-    table = Table(title="可选视觉风格")
-    table.add_column("编号", style="cyan")
-    table.add_column("风格", style="green")
-    table.add_column("说明", style="dim")
-    for k, (style, desc) in STYLES.items():
-        table.add_row(k, style, desc)
-    console.print(table)
 
-    style_choice = Prompt.ask("选择风格编号", choices=list(STYLES.keys()), default="1")
-    style_name, _ = STYLES[style_choice]
+def run_cli(args):
+    """命令行模式"""
+    idea = args.idea or "一只小猫在霓虹灯下的东京街头寻找回家的路"
+    project_id = args.resume or args.project_id or f"proj_{int(time.time())}"
 
-    # 输入想法
-    idea = Prompt.ask("\n💡 输入你的视频创意", default="一只猫在太空站冒险")
-    use_mock = Prompt.ask("使用 Mock 模式？(无 API Key 时选 y)", choices=["y", "n"], default="y") == "y"
+    info(f"🎬 AI 视频工作室 v2.0")
+    info(f"   创意: {idea}")
+    info(f"   风格: {args.style}")
+    info(f"   项目: {project_id}")
+    info(f"   模式: {'Mock' if args.mock else '真实API'} | "
+         f"审查: {'关闭' if args.no_review else f'严格度{args.strictness}'}")
 
-    # 选择剧本模型
-    console.print("\n📝 剧本模型选择:")
-    console.print("  1. gpt-4o (推荐，创意最佳)")
-    console.print("  2. deepseek-chat (性价比)")
-    console.print("  3. 自定义")
-    model_choice = Prompt.ask("选择", choices=["1", "2", "3"], default="1")
-    director_model = {"1": "gpt-4o", "2": "deepseek-chat"}.get(model_choice)
-    if model_choice == "3":
-        director_model = Prompt.ask("输入模型名")
-
-    # 启动流水线
     pipeline = VideoPipeline(
-        director_model=director_model,
-        use_mock=use_mock,
+        director_model=args.director_model,
+        use_mock=args.mock,
+        enable_reviewer=not args.no_review,
+        reviewer_strictness=args.strictness,
+        project_id=project_id,
     )
 
-    production = pipeline.produce(idea, style=style_name)
+    try:
+        production = pipeline.produce(idea, args.style)
+        info(f"\n✅ 制作完成: {production.title}")
+        info(f"   进度: {production.progress_report()}")
+        info(f"   数据库: {pipeline.repo.db_path}")
+    except Exception as e:
+        log_error(f"制作失败: {e}")
+        raise
+    finally:
+        pipeline.close()
 
-    # 输出结果
-    console.print("\n" + "=" * 60)
-    console.print(Panel.fit(
-        f"🎉 制作完成！\n\n"
-        f"📝 剧本: {production.script.title if production.script else 'N/A'}\n"
-        f"🎨 分镜: {len(production.storyboard.shots) if production.storyboard else 0} 个镜头\n"
-        f"🎬 视频: {len(production.clips)} 个片段\n"
-        f"📁 输出: {os.path.abspath('output')}",
-        title="制作报告",
-        border_style="green",
-    ))
+
+def run_interactive():
+    """交互式模式"""
+    from rich.console import Console
+    from rich.prompt import Prompt
+    console = Console()
+
+    console.print("[bold cyan]🎬 AI 视频工作室 v2.0[/bold cyan]")
+    console.print("[dim]多模型协作：推理模型写剧本 → 图像模型画分镜 → 视频模型制成片[/dim]\n")
+
+    idea = Prompt.ask("💡 输入你的视频创意", default="一只猫在太空站冒险")
+    style = Prompt.ask("🎨 视觉风格",
+                       choices=["cinematic", "anime", "3d", "watercolor", "pixel-art"],
+                       default="cinematic")
+    use_mock = Prompt.ask("🧪 Mock模式？", choices=["y", "n"], default="y") == "y"
+
+    pipeline = VideoPipeline(use_mock=use_mock)
+    try:
+        pipeline.produce(idea, style)
+    finally:
+        pipeline.close()
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    if args.idea or args.resume:
+        run_cli(args)
+    else:
+        run_interactive()
