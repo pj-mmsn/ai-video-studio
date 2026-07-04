@@ -17,7 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from src.models import VideoGenClient, VideoClip, Storyboard, Shot
-from config import config
+from src.logging_config import info
 
 
 class VideographerAgent:
@@ -41,7 +41,7 @@ class VideographerAgent:
             视频片段列表（按场景顺序）
         """
         clips = []
-        output_base = config.output_dir / "video" / storyboard.script_title.replace(" ", "_")
+        output_base = Path("output") / "video" / storyboard.script_title.replace(" ", "_")
 
         print(f"\n🎥 [Videographer] 正在生成视频...")
         print(f"   分镜数: {len(storyboard.shots)} 个镜头")
@@ -72,7 +72,7 @@ class VideographerAgent:
             try:
                 path = self.client.generate(
                     image_source, shot.motion_prompt,
-                    duration=config.videographer.duration,
+                    duration=5,
                 )
                 return VideoClip(
                     scene_id=shot.scene_id,

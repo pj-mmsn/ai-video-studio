@@ -30,7 +30,6 @@ from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, Fil
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
-from config import config
 from src.pipeline.pipeline import VideoPipeline
 from src.logging_config import info, error as log_error
 
@@ -42,7 +41,7 @@ static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 # 输出目录
-OUTPUT_DIR = Path(config.output_dir).resolve()
+OUTPUT_DIR = Path("output").resolve()
 
 
 # ================================================================
@@ -135,10 +134,10 @@ async def produce(request: Request):
         os.environ.setdefault("LLM_BASE_URL", "https://api.openai.com/v1")
         os.environ.setdefault("LLM_MODEL", "gpt-4o-mini")
         # 重载 config——因为 config 在模块加载时已经读了空 Key
-        from config import config as cfg
-        cfg.director.api_key = "sk-mock-mode"
-        cfg.storyboard.api_key = "sk-mock-mode"
-        cfg.videographer.api_key = "sk-mock-mode"
+        from config import load_config as _load
+        cfg = _load()
+        # 直接改 cfg dict
+        cfg["api_key"] = "sk-mock-mode"
 
     task_id = f"task_{int(time.time())}"
     running_tasks[task_id] = {"status": "starting", "progress": 0}

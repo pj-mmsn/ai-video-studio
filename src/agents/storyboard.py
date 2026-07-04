@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 from src.models import ImageGenClient, Storyboard, Shot, Script
-from config import config
+from src.logging_config import info
 
 
 class StoryboardAgent:
@@ -43,7 +43,7 @@ class StoryboardAgent:
             Storyboard: 包含所有镜头图片的分镜板
         """
         storyboard = Storyboard(script_title=script.title)
-        output_base = config.output_dir / "storyboard" / script.title.replace(" ", "_")
+        output_base = Path("output") / "storyboard" / script.title.replace(" ", "_")
 
         print(f"\n🎨 [Storyboard] 正在生成分镜图...")
         print(f"   剧本:《{script.title}》 {len(script.scenes)} 个场景")

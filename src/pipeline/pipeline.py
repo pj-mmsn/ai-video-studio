@@ -24,7 +24,6 @@ from src.db.repository import ProjectRepository, StageStatus
 from src.context.bible import StoryBible
 from src.tools.composer import VideoComposer
 from src.logging_config import info, warn, debug
-from config import config
 
 
 @dataclass
@@ -231,7 +230,7 @@ class VideoPipeline:
         info(f"   {production.progress_report()}")
         if self.reviewer:
             info(f"   {self.reviewer.summary()}")
-        info(f"   产出目录: {config.output_dir}")
+        info(f"   产出目录: output")
 
         self.repo.close()
         return production
@@ -299,7 +298,7 @@ class VideoPipeline:
     # ================================================================
 
     def _save_script(self, script: Script):
-        path = config.output_dir / "scripts" / f"{script.title}.json"
+        path = Path("output") / "scripts" / f"{script.title}.json"
         path = Path(str(path).replace(" ", "_"))
         path.parent.mkdir(parents=True, exist_ok=True)
         data = {
@@ -322,7 +321,7 @@ class VideoPipeline:
         print(f"   💾 剧本已保存: {path}")
 
     def _save_storyboard(self, storyboard: Storyboard):
-        path = config.output_dir / "storyboard" / f"{storyboard.script_title}_shots.json"
+        path = Path("output") / "storyboard" / f"{storyboard.script_title}_shots.json"
         path = Path(str(path).replace(" ", "_"))
         path.parent.mkdir(parents=True, exist_ok=True)
         data = {
@@ -340,7 +339,7 @@ class VideoPipeline:
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _save_production(self, production: Production):
-        path = config.output_dir / "productions.json"
+        path = Path("output") / "productions.json"
         productions = []
         if path.exists():
             productions = json.loads(path.read_text(encoding="utf-8"))
