@@ -15,8 +15,13 @@ from src.logging_config import info, debug
 class NovelRepository:
     """长篇小说持久化 + 智能上下文检索"""
 
-    def __init__(self, novel_id: str, db_dir: str = "output/novels"):
+    def __init__(self, novel_id: str, db_dir: str = None):
         self.novel_id = novel_id
+        if db_dir is None:
+            # 相对于项目根目录的绝对路径
+            import os as _os
+            _base = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+            db_dir = _os.path.join(_base, "output", "novels")
         db_path = Path(db_dir) / novel_id / "novel.db"
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(str(db_path), check_same_thread=False)

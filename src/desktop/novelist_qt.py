@@ -502,9 +502,13 @@ class NovelistWindow(QMainWindow):
     def _scan_projects(self) -> list[dict]:
         """扫描 output/novels/ 下所有已有项目"""
         import glob
+        # 用绝对路径，不受工作目录影响
+        base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        novels_dir = os.path.join(base, "output", "novels")
         projects = []
-        for db_path in glob.glob("output/novels/*/novel.db"):
-            pid = db_path.split("/")[-2] if "/" in db_path else db_path.split("\\")[-2]
+        pattern = os.path.join(novels_dir, "*", "novel.db")
+        for db_path in glob.glob(pattern):
+            pid = os.path.basename(os.path.dirname(db_path))
             try:
                 import sqlite3
                 conn = sqlite3.connect(db_path)
