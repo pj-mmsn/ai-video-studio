@@ -1,12 +1,11 @@
 """
-Pipeline 编排器 — 串联三个 Agent 的导演
+Pipeline 编排器 — 串联 Agent + Reviewer 反馈循环
 ============================================================
-这是整个项目的核心——像电影制片人一样协调三个专业 Agent：
-    Director → Storyboard → Videographer → 最终成片
+改进版（知识库优化）：
+    Director → Review → Storyboard → Review → Videographer → Review → 成片
+    每个阶段产出后由 Reviewer 审查，不合格的退回重做（最多3次）。
 
-设计模式：管道模式 (Pipeline Pattern)
-    每个阶段的输出是下一个阶段的输入。
-    和知识库中 Multi-Agent 的"顺序管道"模式一致。
+设计模式：顺序管道 + 反馈循环（CrewAI 模式）
 """
 from __future__ import annotations
 
@@ -20,6 +19,7 @@ from src.models import Script, Storyboard, VideoClip
 from src.agents.director import DirectorAgent
 from src.agents.storyboard import StoryboardAgent
 from src.agents.videographer import VideographerAgent
+from src.agents.reviewer import ReviewerAgent, ReviewResult
 from config import config
 
 
@@ -32,14 +32,17 @@ class Production:
     script: Script = None
     storyboard: Storyboard = None
     clips: list[VideoClip] = field(default_factory=list)
+    reviews: list[ReviewResult] = field(default_factory=list)
     created_at: str = ""
+    max_retries: int = 3
 
     def progress_report(self) -> str:
         stages = []
         stages.append("✅" if self.script else "⬜")
         stages.append("✅" if self.storyboard else "⬜")
         stages.append("✅" if self.clips else "⬜")
-        return f"剧本{stages[0]} → 分镜{stages[1]} → 视频{stages[2]}"
+        review_str = f" | 审查{len(self.reviews)}次" if self.reviews else ""
+        return f"剧本{stages[0]} → 分镜{stages[1]} → 视频{stages[2]}{review_str}"
 
     def to_dict(self) -> dict:
         return {
@@ -71,71 +74,105 @@ class VideoPipeline:
         image_model: str = None,
         video_model: str = None,
         use_mock: bool = False,
+        enable_reviewer: bool = True,     # 新增：启用审查
+        reviewer_strictness: int = 6,      # 新增：审查严格度 1-10
     ):
-        """
-        Args:
-            director_model: 剧本模型（如 gpt-4o / deepseek-chat）
-            image_model: 图像模型（如 dall-e-3）
-            video_model: 视频模型（如 runway-gen3）
-            use_mock: 是否使用 Mock 模式（无 API Key 时测试用）
-        """
-        # 初始化三个 Agent
+        # 三个专业 Agent
         self.director = DirectorAgent(LLMClient(model=director_model))
         self.storyboard = StoryboardAgent(ImageGenClient(model=image_model))
         self.videographer = VideographerAgent(VideoGenClient(model=video_model))
 
+        # 审查员（知识库建议：CrewAI 模式的核心组件）
+        self.reviewer = ReviewerAgent(
+            llm_client=LLMClient() if enable_reviewer else None,
+            strictness=reviewer_strictness,
+        ) if enable_reviewer else None
+
         if use_mock:
-            # Mock 模式
             self.storyboard.use_mock = True
             self.videographer.use_mock = True
 
     # ================================================================
-    # 全流程
+    # 全流程（含审查和重试）
     # ================================================================
 
     def produce(self, idea: str, style: str = "cinematic") -> Production:
-        """完整制作流程：从想法到成片
-
-        Args:
-            idea: 创意想法（如"一只猫在太空站冒险"）
-            style: 视觉风格（cinematic/anime/3d/watercolor/pixel-art）
-
-        Returns:
-            Production: 完整作品
-        """
         production = Production(
-            title="",
-            idea=idea,
-            style=style,
+            title="", idea=idea, style=style,
             created_at=time.strftime("%Y-%m-%d %H:%M"),
         )
 
         print("=" * 60)
         print("🎬 AI 视频工作室 — 开始制作")
-        print(f"   想法: {idea}")
-        print(f"   风格: {style}")
+        print(f"   想法: {idea}  风格: {style}")
+        if self.reviewer:
+            print(f"   模式: 顺序管道 + 审查反馈（严格度{self.reviewer.strictness}）")
         print("=" * 60)
 
-        # ---- Stage 1: 剧本 ----
-        production.script = self.director.create_script(idea, style)
+        # ---- Stage 1: 剧本 + 审查 ----
+        production.script = self._stage_with_review(
+            "剧本",
+            lambda: self.director.create_script(idea, style),
+            lambda result: self.reviewer.review_script(result) if self.reviewer else None,
+            production,
+            max_retries=2,
+        )
         production.title = production.script.title
         self._save_script(production.script)
 
-        # ---- Stage 2: 分镜 ----
-        production.storyboard = self.storyboard.create_storyboard(production.script)
+        # ---- Stage 2: 分镜 + 审查 ----
+        production.storyboard = self._stage_with_review(
+            "分镜",
+            lambda: self.storyboard.create_storyboard(production.script),
+            lambda result: self.reviewer.review_storyboard(result) if self.reviewer else None,
+            production,
+            max_retries=2,
+        )
         self._save_storyboard(production.storyboard)
 
-        # ---- Stage 3: 视频 ----
+        # ---- Stage 3: 视频 + 审查 ----
         production.clips = self.videographer.produce(production.storyboard)
+        if self.reviewer:
+            review = self.reviewer.review_clips(production.clips, production.storyboard)
+            production.reviews.append(review)
+
         self._save_production(production)
 
         print("\n" + "=" * 60)
         print("🎉 制作完成！")
         print(f"   {production.progress_report()}")
+        if self.reviewer:
+            print(f"   {self.reviewer.summary()}")
         print(f"   产出目录: {config.output_dir}")
         print("=" * 60)
 
         return production
+
+    # ================================================================
+    # 带审查和重试的阶段执行器
+    # ================================================================
+
+    def _stage_with_review(self, stage_name, producer, review_fn, production, max_retries=2):
+        """执行一个阶段，审查不合格则重试"""
+        for attempt in range(max_retries + 1):
+            result = producer()
+
+            if not self.reviewer:
+                return result
+
+            review = review_fn(result) if callable(review_fn) else None
+            if review:
+                production.reviews.append(review)
+                if review.passed:
+                    return result
+                if attempt < max_retries:
+                    print(f"   🔄 {stage_name}审查未通过（第{attempt+1}次），重试中...")
+                    if review.suggestions:
+                        print(f"      建议: {review.suggestions[0][:80]}")
+                else:
+                    print(f"   ⚠️  {stage_name}重试{max_retries}次仍未通过审查，使用当前版本")
+
+        return result
 
     # ================================================================
     # 分步执行（方便调试和单步测试）
