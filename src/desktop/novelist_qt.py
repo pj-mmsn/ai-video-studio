@@ -177,14 +177,14 @@ class MainWin(QMainWindow):
             QTabBar::tab{{background:{C['panel']};color:{C['muted']};padding:8px 16px;font-size:12px;border:none;}}
             QTabBar::tab:selected{{color:{C['accent']};border-bottom:2px solid {C['accent']};}}
         """)
-        self.detail_v=QTextBrowser();self.detail_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
-        self.detail_v.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.detail_v=QTextEdit();self.detail_v.setReadOnly(True)
+        self.detail_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
         self.right_tabs.addTab(self.detail_v,"当前内容")
-        self.char_v=QTextBrowser();self.char_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
-        self.char_v.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.char_v=QTextEdit();self.char_v.setReadOnly(True)
+        self.char_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
         self.right_tabs.addTab(self.char_v,"角色")
-        self.world_v=QTextBrowser();self.world_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
-        self.world_v.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.world_v=QTextEdit();self.world_v.setReadOnly(True)
+        self.world_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
         self.right_tabs.addTab(self.world_v,"世界观")
         
         # 中央+右侧之间可拖拽分割
@@ -251,8 +251,8 @@ class MainWin(QMainWindow):
                     "world_building":bible[0]["value"] if bible else "",
                     "characters":[{"name":c["name"],"role":c["role"],"traits":c["traits"]} for c in chars]}
         self.proj_lbl.setText(f"📖 {r['title']}")
-        self.char_v.setText("\n".join(f"{c['name']}({c['role']})\n  {c['traits']}" for c in chars))
-        self.world_v.setText(bible[0]["value"] if bible else "")
+        self.char_v.setPlainText("\n".join(f"{c['name']}({c['role']})\n  {c['traits']}" for c in chars))
+        self.world_v.setPlainText(bible[0]["value"] if bible else "")
         # 展示已有构思
         self._show_idea()
         # 大纲树
@@ -286,7 +286,7 @@ class MainWin(QMainWindow):
         <h3 style='color:{C["muted"]}'>角色</h3><pre style='color:{C["text"]}'>{chars}</pre>"""
         self.detail_v.setHtml(html)
         self.right_tabs.setCurrentIndex(0)
-        self.idea_in.setPlainText(d.get('premise',''))
+        self.idea_in.setText((d.get('premise',''))
 
     def _mode_switch(self, idx):
         modes=["idea","outline","write"];self._mode=modes[idx]
@@ -352,7 +352,7 @@ class MainWin(QMainWindow):
             self._th=StreamThread(self.cfg,P["idea"],u)
             self._th.chunk.connect(self._chunk)
             self._th.done.connect(self._idea_done)
-            self._th.error.connect(lambda e:(self.detail_v.setPlainText(f"错误: {e}"),self.go_btn.setEnabled(True)))
+            self._th.error.connect(lambda e:(self.detail_v.setText((f"错误: {e}"),self.go_btn.setEnabled(True)))
             self._th.start()
         elif tag=="outline":
             if not self._idea: self.go_btn.setEnabled(True);return
@@ -372,10 +372,10 @@ class MainWin(QMainWindow):
             self._th=StreamThread(self.cfg,P["outline"],u)
             self._th.chunk.connect(self._chunk)
             self._th.done.connect(self._out_done)
-            self._th.error.connect(lambda e:(self.detail_v.setPlainText(f"错误: {e}"),self.go_btn.setEnabled(True)))
+            self._th.error.connect(lambda e:(self.detail_v.setText((f"错误: {e}"),self.go_btn.setEnabled(True)))
             self._th.start()
         elif tag=="write":
-            if not self.repo or not self._nid: self.detail_v.setPlainText("请先生成大纲，点击左侧某一节");self.go_btn.setEnabled(True);return
+            if not self.repo or not self._nid: self.detail_v.setText(("请先生成大纲，点击左侧某一节");self.go_btn.setEnabled(True);return
             self.detail_v.clear();self._status("写作中...");self.go_btn.setEnabled(False)
             ctx=self.repo.get_writing_context(self._nid)
             self._status(f"上下文 ~{ctx['token_estimate']} tokens")
@@ -406,13 +406,13 @@ class MainWin(QMainWindow):
                 u=f"{ctx['context_text']}\n{chap_ctx}\n---\n大纲: {n['title']}\n{fb if fb else ''}\n\n请写本节正文（纯小说内容，不要JSON/大纲/章节标题）:"
             from src.models.llm_client import chat
             self.go_btn.setEnabled(False)
-            self.detail_v.setPlainText("⏳ 生成中...")
+            self.detail_v.setText(("⏳ 生成中...")
             QApplication.processEvents()
             try:
                 raw=chat(self.cfg,P["write"],u)
                 self._write_done(raw)
             except Exception as e:
-                self.detail_v.setPlainText(f"错误: {e}")
+                self.detail_v.setText((f"错误: {e}")
             self.go_btn.setEnabled(True);self._status("")
         self.fb_in.clear()
 
@@ -431,7 +431,7 @@ class MainWin(QMainWindow):
         <h3>世界观</h3><p>{d.get('world_building','')}</p>
         <h3>角色</h3><pre>{chars}</pre>"""
         self.detail_v.setHtml(html)
-        self.char_v.setText(chars);self.world_v.setText(d.get('world_building',''))
+        self.char_v.setPlainText(chars);self.world_v.setPlainText(d.get('world_building',''))
         self.proj_lbl.setText(f"📖 {d.get('title','')}")
         if not self.repo: self._init_db(d)
         self._status("构思完成 — 切换到大纲模式")
@@ -476,7 +476,7 @@ class MainWin(QMainWindow):
     def _write_done(self,raw):
         self.go_btn.setEnabled(True);self._status("")
         clean=self._clean_output(raw)
-        self.detail_v.setPlainText(clean)
+        self.detail_v.setText((clean)
         if self.repo and self._nid:
             m=re.search(r'【本节摘要】[：:]\s*(.+?)(?:\n|$)',clean)
             self.repo.save_section(self._nid,clean,m.group(1) if m else "")
