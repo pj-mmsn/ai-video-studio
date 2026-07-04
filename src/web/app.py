@@ -129,11 +129,16 @@ async def produce(request: Request):
     scene_count = body.get("scene_count", 5)
     duration_per_scene = body.get("duration_per_scene", 5)
 
-    # Mock 模式时设置假的 API Key，避免 LLMClient 构造时报 Missing credentials
+    # Mock 模式：直接覆盖 config 对象的 api_key（避免 dataclass default_factory 缓存空值）
     if use_mock:
-        os.environ.setdefault("LLM_API_KEY", "sk-mock-mode")
+        os.environ["LLM_API_KEY"] = "sk-mock-mode"
         os.environ.setdefault("LLM_BASE_URL", "https://api.openai.com/v1")
         os.environ.setdefault("LLM_MODEL", "gpt-4o-mini")
+        # 重载 config——因为 config 在模块加载时已经读了空 Key
+        from config import config as cfg
+        cfg.llm.api_key = "sk-mock-mode"
+        cfg.storyboard.api_key = "sk-mock-mode"
+        cfg.videographer.api_key = "sk-mock-mode"
 
     task_id = f"task_{int(time.time())}"
     running_tasks[task_id] = {"status": "starting", "progress": 0}
