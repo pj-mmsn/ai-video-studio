@@ -179,9 +179,9 @@ class MainWin(QMainWindow):
         """)
         self.detail_v=QTextBrowser();self.detail_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
         self.right_tabs.addTab(self.detail_v,"当前内容")
-        self.char_v=QTextBrowser();self.char_v.setStyleSheet(self.detail_v.styleSheet())
+        self.char_v=QTextBrowser();self.char_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
         self.right_tabs.addTab(self.char_v,"角色")
-        self.world_v=QTextBrowser();self.world_v.setStyleSheet(self.detail_v.styleSheet())
+        self.world_v=QTextBrowser();self.world_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
         self.right_tabs.addTab(self.world_v,"世界观")
         
         # 中央+右侧之间可拖拽分割
@@ -193,6 +193,15 @@ class MainWin(QMainWindow):
         splitter.setStyleSheet(f"QSplitter::handle{{background:{C['border']};width:2px;}}")
         h.addWidget(splitter)
         self.setCentralWidget(body)
+        # 全局滚动条
+        self.setStyleSheet(f"""
+        QScrollBar:vertical{{width:10px;background:{C['bg']};border-radius:5px;}}
+        QScrollBar::handle:vertical{{background:{C['border']};border-radius:5px;min-height:30px;}}
+        QScrollBar::handle:vertical:hover{{background:{C['accent']};}}
+        QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{{height:0;}}
+        QScrollBar:horizontal{{height:10px;background:{C['bg']};}}
+        QScrollBar::handle:horizontal{{background:{C['border']};border-radius:5px;}}
+        """)
 
     # ═══════════════════════════════════════ 逻辑 ═══════════════════════════════════════
     def _scan(self):
