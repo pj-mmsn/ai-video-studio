@@ -103,7 +103,7 @@ def run_interactive():
 
 
 if __name__ == "__main__":
-    args = parse_args()
+    args =  parse_args()
     if args.idea or args.resume:
         run_cli(args)
     else:

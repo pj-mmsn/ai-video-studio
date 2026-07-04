@@ -129,6 +129,12 @@ async def produce(request: Request):
     scene_count = body.get("scene_count", 5)
     duration_per_scene = body.get("duration_per_scene", 5)
 
+    # Mock 模式时设置假的 API Key，避免 LLMClient 构造时报 Missing credentials
+    if use_mock:
+        os.environ.setdefault("LLM_API_KEY", "sk-mock-mode")
+        os.environ.setdefault("LLM_BASE_URL", "https://api.openai.com/v1")
+        os.environ.setdefault("LLM_MODEL", "gpt-4o-mini")
+
     task_id = f"task_{int(time.time())}"
     running_tasks[task_id] = {"status": "starting", "progress": 0}
 
@@ -227,8 +233,8 @@ async def serve_output(file_path: str):
 
 def main():
     print("🎬 AI Video Studio Web 启动")
-    print("   访问: http://localhost:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    print("   访问: http://localhost:8080")
+    uvicorn.run(app, host="0.0.0.0", port=8080, log_level="info")
 
 
 if __name__ == "__main__":

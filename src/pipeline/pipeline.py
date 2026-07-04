@@ -95,6 +95,7 @@ class VideoPipeline:
         ) if enable_reviewer else None
 
         if use_mock:
+            self.director.use_mock = True     # Director 也要 Mock
             self.storyboard.use_mock = True
             self.videographer.use_mock = True
 
