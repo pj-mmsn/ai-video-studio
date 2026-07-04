@@ -260,6 +260,8 @@ class MainWin(QMainWindow):
         self.proj_lbl.setText(f"📖 {r['title']}")
         self.char_v.setText("\n".join(f"{c['name']}({c['role']})\n  {c['traits']}" for c in chars))
         self.world_v.setText(bible[0]["value"] if bible else "")
+        # 展示已有构思
+        self._show_idea()
         # 大纲树
         self.tree.clear();data=self.repo.get_outline_tree()
         npm={}
@@ -272,14 +274,26 @@ class MainWin(QMainWindow):
                 it.setData(0,Qt.UserRole,n["id"])
                 if n["status"]=="done":it.setForeground(0,QColor(C["green"]))
                 build(it,n["id"])
-        for r in npm.get(0,[]):build(None,r["id"])
+        for rx in npm.get(0,[]):build(None,rx["id"])
         self.tree.expandAll()
         p=self.repo.get_progress()
         self.tree_cnt.setText(f"{p['done_sections']}/{p['total_sections']}节")
         self.prog_bar.setValue(int(p.get("progress_pct",0)))
-        self.prog_lbl.setText(f"{p['done_sections']}/{p['total_sections']} 节 · {p['total_words']:,}字")
+        self.prog_lbl.setText(f"{p['done_sections']}/{p['total_sections']}节 · {p['total_words']:,}字")
         self._status(f"已加载: {r['title']} — {p['total_words']:,}字")
         self._mode_switch(2)
+
+    def _show_idea(self):
+        """展示已有构思到输出区"""
+        d=self._idea
+        chars="\n".join(f"{c['name']}({c.get('role','')}): {c.get('traits','')}" for c in d.get("characters",[]))
+        self.content.setHtml(f"""
+        <h2 style='color:{C["accent"]}'>{d.get('title','')}</h2>
+        <p style='color:{C["muted"]}'>{d.get('genre','')} · {d.get('hook','')}</p>
+        <blockquote style='color:{C["text"]};border-left:3px solid {C["accent"]};padding-left:12px;'>{d.get('premise','')}</blockquote>
+        <h3 style='color:{C["muted"]}'>世界观</h3><p>{d.get('world_building','')}</p>
+        <h3 style='color:{C["muted"]}'>角色</h3><pre style='color:{C["text"]}'>{chars}</pre>""")
+        self.idea_in.setPlainText(d.get('premise',''))
 
     def _mode_switch(self, idx):
         modes=["idea","outline","write"];self._mode=modes[idx]
@@ -288,35 +302,57 @@ class MainWin(QMainWindow):
 
     def _tree_click(self, item):
         nid=item.data(0,Qt.UserRole)
-        if nid and self.repo: self._nid=nid
+        if nid and self.repo:
+            self._nid=nid
+            node=self.repo.get_node(nid)
+            if node and node.get("status")=="done":
+                # 加载已写内容展示
+                sec=self.repo.conn.execute(
+                    "SELECT content,word_count FROM sections WHERE outline_node_id=? ORDER BY id DESC LIMIT 1",
+                    (nid,)).fetchone()
+                if sec:
+                    self.content.setPlainText(sec["content"])
+                    self._status(f"已加载: {node['title']} ({sec['word_count']}字)")
 
     def _go(self, tag):
+        fb=self.fb_in.text().strip()
         if tag=="idea":
-            idea=self.idea_in.toPlainText().strip()
-            if not idea:return
             self.content.clear();self.out_status.setText("生成中...");self.go_btn.setEnabled(False)
-            self._th=StreamThread(self.cfg,P["idea"],f"故事想法: {idea}")
+            # 有构思+反馈 → 打磨模式
+            if self._idea and fb:
+                u=f"现有设定:\n{json.dumps(self._idea,ensure_ascii=False)}\n\n修改建议: {fb}\n\n请根据建议修改，返回完整JSON。"
+            else:
+                idea=self.idea_in.toPlainText().strip()
+                if not idea: self.go_btn.setEnabled(True);return
+                u=f"故事想法: {idea}"
+            self._th=StreamThread(self.cfg,P["idea"],u)
             self._th.chunk.connect(self._chunk)
             self._th.done.connect(self._idea_done)
         elif tag=="outline":
-            if not self._idea: self.content.setPlainText("请先生成构思");return
+            if not self._idea: self.content.setPlainText("请先生成构思");self.go_btn.setEnabled(True);return
             self.content.clear();self.out_status.setText("生成中...");self.go_btn.setEnabled(False)
-            v=self.v_in.text() or "3";c=self.c_in.text() or "4"
-            u=f"已有设定:\n{json.dumps(self._idea,ensure_ascii=False)}\n规划{v}卷×{c}章"
+            # 有大纲+反馈 → 打磨模式
+            if self.repo and self.repo.get_outline_tree() and fb:
+                v=self.v_in.text() or "3";c=self.c_in.text() or "4"
+                u=f"已有设定:\n{json.dumps(self._idea,ensure_ascii=False)}\n\n现有大纲已加载。修改建议: {fb}\n\n请根据建议调整大纲结构。规划约{v}卷×{c}章。返回完整JSON。"
+            else:
+                v=self.v_in.text() or "3";c=self.c_in.text() or "4"
+                u=f"已有设定:\n{json.dumps(self._idea,ensure_ascii=False)}\n规划{v}卷×{c}章"
             self._th=StreamThread(self.cfg,P["outline"],u)
             self._th.chunk.connect(self._chunk)
             self._th.done.connect(self._out_done)
         elif tag=="write":
-            if not self.repo or not self._nid: self.content.setPlainText("请先生成大纲，点击左侧某一节");return
+            if not self.repo or not self._nid: self.content.setPlainText("请先生成大纲，点击左侧某一节");self.go_btn.setEnabled(True);return
             self.content.clear();self.out_status.setText("写作中...");self.go_btn.setEnabled(False)
             ctx=self.repo.get_writing_context(self._nid)
             self.ctx_lbl.setText(f"上下文 ~{ctx['token_estimate']} tokens");self.ctx_lbl.show()
             n=self.repo.get_node(self._nid)
-            fb=self.fb_in.text().strip();self.fb_in.clear()
+            # 有反馈 → 重写模式
             u=f"{ctx['context_text']}\n---\n大纲: {n['title']}\n{fb if fb else ''}\n请写本节:"
             self._th=StreamThread(self.cfg,P["write"],u)
             self._th.chunk.connect(self._chunk)
             self._th.done.connect(self._write_done)
+        self.fb_in.clear()
         self._th.error.connect(lambda e:(self.content.setPlainText(f"错误: {e}"),self.go_btn.setEnabled(True)))
         self._th.start()
 
