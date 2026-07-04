@@ -345,7 +345,7 @@ class MainWin(QMainWindow):
             if not self.repo or not self._nid: self.detail_v.setPlainText("请先生成大纲，点击左侧某一节");self.go_btn.setEnabled(True);return
             self.detail_v.clear();self._status("写作中...");self.go_btn.setEnabled(False)
             ctx=self.repo.get_writing_context(self._nid)
-            self.ctx_lbl.setText(f"上下文 ~{ctx['token_estimate']} tokens");self.ctx_lbl.show()
+            self._status(f"上下文 ~{ctx['token_estimate']} tokens")
             n=self.repo.get_node(self._nid)
             # 有反馈 → 带上已有内容一起给模型
             if fb and n.get("status")=="done":
