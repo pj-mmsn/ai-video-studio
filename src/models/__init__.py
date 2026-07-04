@@ -104,12 +104,18 @@ class LLMClient(BaseModelClient):
     def __init__(self, api_key: str = None, base_url: str = None, model: str = None):
         _api_key = api_key or config.director.api_key
         _base_url = base_url or config.director.base_url
-        super().__init__(model or config.director.model, _api_key)
+        _model = model or config.director.model
+        super().__init__(_model, _api_key)
         self.base_url = _base_url
-        # 判断是否是 Anthropic 兼容接口（/anthropic 端点）
         self._use_anthropic = "/anthropic" in _base_url
         if not self._use_anthropic:
             self.client = OpenAI(api_key=_api_key, base_url=_base_url)
+        # 确保模型名不为空
+        if not _model or "gpt" in _model.lower():
+            from src.logging_config import warn
+            warn(f"LLMClient 模型名异常: '{_model}'，强制使用 deepseek-v4-pro")
+            _model = "deepseek-v4-pro"
+            self.model_name = _model
 
     def chat(self, system_prompt: str, user_prompt: str, temperature: float = None) -> str:
         """调用推理模型生成文本"""
