@@ -78,6 +78,11 @@ class NovelRepository:
                 context_json TEXT, token_estimate INTEGER,
                 created_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS story_bible (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT, category TEXT, key TEXT, value TEXT,
+                source_scene INTEGER DEFAULT 0, updated_at TEXT
+            );
         """)
         self.conn.commit()
 
