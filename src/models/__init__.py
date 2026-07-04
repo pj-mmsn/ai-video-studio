@@ -103,14 +103,21 @@ class LLMClient(BaseModelClient):
 
     def __init__(self, api_key: str = None, base_url: str = None, model: str = None):
         _api_key = api_key or config.director.api_key
+        _base_url = base_url or config.director.base_url
         super().__init__(model or config.director.model, _api_key)
-        self.client = OpenAI(
-            api_key=_api_key,
-            base_url=base_url or config.director.base_url,
-        )
+        self.base_url = _base_url
+        # 判断是否是 Anthropic 兼容接口（/anthropic 端点）
+        self._use_anthropic = "/anthropic" in _base_url
+        if not self._use_anthropic:
+            self.client = OpenAI(api_key=_api_key, base_url=_base_url)
 
     def chat(self, system_prompt: str, user_prompt: str, temperature: float = None) -> str:
         """调用推理模型生成文本"""
+        if self._use_anthropic:
+            return self._chat_anthropic(system_prompt, user_prompt, temperature)
+        return self._chat_openai(system_prompt, user_prompt, temperature)
+
+    def _chat_openai(self, system_prompt, user_prompt, temperature):
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages=[
@@ -120,6 +127,37 @@ class LLMClient(BaseModelClient):
             temperature=temperature or config.director.temperature,
         )
         return response.choices[0].message.content or ""
+
+    def _chat_anthropic(self, system_prompt, user_prompt, temperature):
+        """用 Anthropic Messages API 格式调用"""
+        import urllib.request, json
+
+        body = json.dumps({
+            "model": self.model_name,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user_prompt}],
+            "max_tokens": 4096,
+            "temperature": temperature or config.director.temperature,
+        }).encode()
+
+        req = urllib.request.Request(
+            f"{self.base_url}/v1/messages",
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": self.api_key,
+                "anthropic-version": "2023-06-01",
+            },
+            method="POST",
+        )
+
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read())
+            # Anthropic 格式: content[0].text
+            content = data.get("content", [])
+            if content and isinstance(content, list):
+                return content[0].get("text", "")
+            return ""
 
 
 # ================================================================
