@@ -143,21 +143,6 @@ class MainWin(QMainWindow):
         self.stack.addWidget(p3)
 
         sl.addWidget(self.stack);sl.addStretch()
-
-        # 输出区(侧边栏底部)
-        out_w=QWidget();ol=QVBoxLayout(out_w);ol.setContentsMargins(4,0,4,4)
-        self.out_status=QLabel("");self.out_status.setStyleSheet(f"color:{C['yellow']};font-size:11px;")
-        ol.addWidget(self.out_status)
-        self.content=QTextEdit();self.content.setReadOnly(True)
-        self.content.setFont(QFont("Microsoft YaHei",11))
-        self.content.setMaximumHeight(160)
-        self.content.setStyleSheet(f"""
-            QTextEdit{{background:{C['card']};color:{C['text']};border:1px solid {C['border']};
-            border-radius:8px;padding:8px;line-height:1.6;selection-background:{C['accent']};}}
-        """)
-        self.content.setPlaceholderText("AI输出区")
-        ol.addWidget(self.content)
-        sl.addWidget(out_w)
         info=QLabel(f"<span style='color:{C['muted']};font-size:10px;'>模型: {self.cfg['model']}</span>")
         info.setStyleSheet("padding-top:8px;");sl.addWidget(info)
         h.addWidget(sidebar)
@@ -295,15 +280,8 @@ class MainWin(QMainWindow):
         modes=["idea","outline","write"];self._mode=modes[idx]
         self.stack.setCurrentIndex(idx)
         for i,b in enumerate(self.btns):b.setChecked(i==idx)
-        # 构思/大纲模式隐藏底部输出区，内容展示在右侧
-        is_write = idx==2
-        self.content.setVisible(is_write)
-        self.out_status.setVisible(is_write)
-        self.fb_in.setPlaceholderText("修改意见 (Enter 执行)..." if is_write else "修改意见 (Enter 执行)...")
-        self.go_btn.setText("执行" if is_write else "执行")
-        if idx==0 and self._idea: self._show_idea()
-        elif idx==1 and self._idea: self._show_idea()
-        elif idx==2 and self.repo:
+        # 切换到写作模式时更新进度
+        if idx==2 and self.repo:
             tree=self.repo.get_outline_tree()
             if tree:
                 done=[n for n in tree if n.get("status")=="done"]
@@ -335,8 +313,7 @@ class MainWin(QMainWindow):
     def _go(self, tag):
         fb=self.fb_in.text().strip()
         if tag=="idea":
-            self.detail_v.clear();self.out_status.setText("生成中...");self.go_btn.setEnabled(False)
-            # 有构思+反馈 → 打磨模式
+            self.detail_v.clear();self._status("生成中...");self.go_btn.setEnabled(False)
             if self._idea and fb:
                 u=f"现有设定:\n{json.dumps(self._idea,ensure_ascii=False)}\n\n修改建议: {fb}\n\n请根据建议修改，返回完整JSON。"
             else:
@@ -348,7 +325,7 @@ class MainWin(QMainWindow):
             self._th.done.connect(self._idea_done)
         elif tag=="outline":
             if not self._idea: self.go_btn.setEnabled(True);return
-            self.detail_v.clear();self.out_status.setText("生成中...");self.go_btn.setEnabled(False)
+            self.detail_v.clear();self._status("生成中...");self.go_btn.setEnabled(False)
             # 注入 Tier4: 角色+世界观
             ctx_parts=[json.dumps(self._idea,ensure_ascii=False)]
             chars=self._idea.get("characters",[])
@@ -365,8 +342,8 @@ class MainWin(QMainWindow):
             self._th.chunk.connect(self._chunk)
             self._th.done.connect(self._out_done)
         elif tag=="write":
-            if not self.repo or not self._nid: self.content.setPlainText("请先生成大纲，点击左侧某一节");self.go_btn.setEnabled(True);return
-            self.content.clear();self.out_status.setText("写作中...");self.go_btn.setEnabled(False)
+            if not self.repo or not self._nid: self.detail_v.setPlainText("请先生成大纲，点击左侧某一节");self.go_btn.setEnabled(True);return
+            self.detail_v.clear();self._status("写作中...");self.go_btn.setEnabled(False)
             ctx=self.repo.get_writing_context(self._nid)
             self.ctx_lbl.setText(f"上下文 ~{ctx['token_estimate']} tokens");self.ctx_lbl.show()
             n=self.repo.get_node(self._nid)
@@ -385,19 +362,15 @@ class MainWin(QMainWindow):
             self._th.chunk.connect(self._chunk)
             self._th.done.connect(self._write_done)
         self.fb_in.clear()
-        self._th.error.connect(lambda e:(self.content.setPlainText(f"错误: {e}"),self.go_btn.setEnabled(True)))
+        self._th.error.connect(lambda e:(self.detail_v.setPlainText(f"错误: {e}"),self.go_btn.setEnabled(True)))
         self._th.start()
 
     def _chunk(self,t):
-        if self._mode=="write":
-            c=self.content.textCursor();c.movePosition(QTextCursor.End);c.insertText(t)
-            self.content.ensureCursorVisible()
-        else:
-            c=self.detail_v.textCursor();c.movePosition(QTextCursor.End);c.insertText(t)
-            self.detail_v.ensureCursorVisible()
+        c=self.detail_v.textCursor();c.movePosition(QTextCursor.End);c.insertText(t)
+        self.detail_v.ensureCursorVisible()
 
     def _idea_done(self,raw):
-        self.go_btn.setEnabled(True);self.out_status.setText("")
+        self.go_btn.setEnabled(True);self._status("")
         d=self._parse(raw);self._idea=d
         chars="\n".join(f"{c['name']}({c.get('role','')}): {c.get('traits','')}" for c in d.get("characters",[]))
         html=f"""
@@ -413,7 +386,7 @@ class MainWin(QMainWindow):
         self._status("构思完成 — 切换到大纲模式")
 
     def _out_done(self,raw):
-        self.go_btn.setEnabled(True);self.out_status.setText("")
+        self.go_btn.setEnabled(True);self._status("")
         d=self._parse(raw)
         if not self.repo: self._init_db(self._idea)
         self.repo.conn.execute("DELETE FROM outline_nodes WHERE novel_id=?",(self.repo.novel_id,))
@@ -433,7 +406,7 @@ class MainWin(QMainWindow):
         self._status("大纲完成 — 切换到写作模式")
 
     def _write_done(self,raw):
-        self.go_btn.setEnabled(True);self.out_status.setText("")
+        self.go_btn.setEnabled(True);self._status("")
         if self.repo and self._nid:
             m=re.search(r'【本节摘要】[：:]\s*(.+?)(?:\n|$)',raw)
             self.repo.save_section(self._nid,raw,m.group(1) if m else "")
