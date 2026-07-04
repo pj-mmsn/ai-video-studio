@@ -20,19 +20,22 @@ from config import load_config
 from src.models.llm_client import chat as llm_chat
 from src.agents.novelist import NovelistAgent, NOVELIST_SYSTEM
 from src.db.novel_repository import NovelRepository
+from src.db.session_store import SessionStore
 
 
 class WriteThread(QThread):
-    """网络调用线程——只做 LLM 请求，不碰数据库"""
+    """网络调用线程——LLM请求 + Redis上下文管理"""
     chunk = pyqtSignal(str)
     context_ready = pyqtSignal(str, int)
-    done = pyqtSignal(str, str)  # (raw_text, summary)
+    overflow = pyqtSignal(dict)         # 上下文超限信号（主线程处理flush）
+    done = pyqtSignal(str, str)
     error = pyqtSignal(str)
 
-    def __init__(self, config, repo, node_id, feedback=""):
+    def __init__(self, config, repo, session, node_id, feedback=""):
         super().__init__()
         self.cfg = config
         self.repo = repo
+        self.session = session
         self.node_id = node_id
         self.feedback = feedback
         self._paused = False
@@ -42,10 +45,29 @@ class WriteThread(QThread):
 
     def run(self):
         try:
-            ctx = self.repo.get_writing_context(self.node_id)
-            self.context_ready.emit(ctx["context_text"], ctx["token_estimate"])
+            # 1. 从 SQL 加载上下文到 Redis
+            sql_ctx = self.repo.get_writing_context(self.node_id)
+            self.session.load_context({
+                "current_node_id": self.node_id,
+                "context_text": sql_ctx["context_text"],
+                "characters": sql_ctx.get("characters", []),
+                "threads": sql_ctx.get("threads", []),
+                "rules": sql_ctx.get("rules", []),
+                "recent_summaries": sql_ctx.get("recent_summaries", []),
+                "token_estimate": sql_ctx["token_estimate"],
+            })
+            self.context_ready.emit(sql_ctx["context_text"], sql_ctx["token_estimate"])
 
+            # 2. 检查上下文是否超限
+            if self.session.check_overflow(max_tokens=6000):
+                flushed = self.session.trim_context()
+                if flushed:
+                    self.overflow.emit(flushed)
+
+            # 3. 从 Redis 读上下文用于 LLM 调用
+            ctx = self.session.get_context()
             node = self.repo.get_node(self.node_id)
+
             system = "你是一位职业小说家。根据大纲和上下文写作，保持设定一致。"
             user = f"""{ctx['context_text']}
 
@@ -60,14 +82,17 @@ class WriteThread(QThread):
 
             for para in raw.split("\n\n"):
                 while self._paused:
-                    time.sleep(0.1)
+                    __import__('time').sleep(0.1)
                 if para.strip():
                     self.chunk.emit(para + "\n\n")
-                    time.sleep(0.02)
+                    __import__('time').sleep(0.02)
 
-            # 提取摘要
-            m = re.search(r'【本节摘要】[：:]\s*(.+?)(?:\n|$)', raw)
+            m = __import__('re').search(r'【本节摘要】[：:]\s*(.+?)(?:\n|$)', raw)
             summary = m.group(1) if m else ""
+
+            # 4. 更新 Redis 上下文
+            self.session.update_after_write(self.node_id, summary)
+
             self.done.emit(raw, summary)
 
         except Exception as e:
@@ -80,10 +105,11 @@ class NovelistWindow(QMainWindow):
         self.setWindowTitle("📖 AI 小说家")
         self.resize(1400, 850)
 
-        # 状态——全在主线程
+        # 状态
         self.config = load_config()
         self.agent = None
         self.repo = None
+        self.session = None        # Redis 会话层
         self.write_thread = None
         self.current_node_id = None
         self.outline_data = []
@@ -223,7 +249,12 @@ class NovelistWindow(QMainWindow):
         self.outline_data = self.repo.get_outline_tree()
         self._refresh_tree()
         self._refresh_info()
-        self._status(f"✅ {novel.title}")
+
+        # 启动 Redis 会话
+        self.session = SessionStore(self.repo.novel_id)
+        status = self.session.start_session()
+        redis_status = "Redis" if status["redis"] else "内存"
+        self._status(f"✅ {novel.title} | 会话: {redis_status}模式")
         self.setWindowTitle(f"📖 {novel.title} — AI 小说家")
 
     # ================================================================
@@ -268,10 +299,11 @@ class NovelistWindow(QMainWindow):
 
         fb = self.fb.text().strip(); self.fb.clear()
 
-        self.write_thread = WriteThread(self.config, self.repo, self.current_node_id, fb)
+        self.write_thread = WriteThread(self.config, self.repo, self.session, self.current_node_id, fb)
         self.write_thread.context_ready.connect(lambda t, n: (self.ctx_label.setText(f"🧠 ~{n} tokens"), self.ctx_label.show()))
         self.write_thread.chunk.connect(self._on_chunk)
         self.write_thread.done.connect(self._on_done)
+        self.write_thread.overflow.connect(self._on_overflow)
         self.write_thread.error.connect(lambda e: QMessageBox.critical(self, "错误", e))
         self.write_thread.start()
         self._status("✍️ 写作中...")
@@ -285,11 +317,21 @@ class NovelistWindow(QMainWindow):
         self.repo.update_node_status(self.current_node_id, "done")
         self.btn_start.setEnabled(True); self.btn_pause.setEnabled(False)
         self.btn_pause.setText("⏸ 暂停"); self.ctx_label.hide()
-        self._status("✅ 完成")
+        self._status(f"✅ 完成 | Redis sessions: {self.session._get('sections_written') or '0'}节")
         p = self.repo.get_progress()
         self.prog.setValue(int(p.get("progress_pct", 0)))
         self.outline_data = self.repo.get_outline_tree()
         self._refresh_tree(); self._refresh_info()
+
+    def _on_overflow(self, flushed):
+        """Redis 上下文超限——旧摘要写入 SQL，Redis 只保留热的"""
+        if flushed.get("flushed_summary"):
+            self.repo.conn.execute(
+                "INSERT INTO story_bible (project_id,category,key,value,source_scene,updated_at) VALUES (?,?,?,?,?,?)",
+                (self.repo.novel_id, "session_summary", f"auto_{int(__import__('time').time())}",
+                 flushed["flushed_summary"], 0, __import__('datetime').datetime.now().isoformat()))
+            self.repo.conn.commit()
+            self._status(f"🔄 上下文裁剪: 保留最近{flushed.get('remaining_count',0)}条")
 
     def _toggle_pause(self):
         if not self.write_thread: return
