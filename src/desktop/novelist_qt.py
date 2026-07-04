@@ -416,6 +416,14 @@ class MainWin(QMainWindow):
     def _out_done(self,raw):
         self.go_btn.setEnabled(True);self._status("")
         d=self._parse(raw)
+        # 如果流式返回空或解析失败，用非流式重试
+        if not d.get("volumes"):
+            from src.models.llm_client import chat
+            raw2=chat(self.cfg,P["outline"],
+                f"已有设定:\n{json.dumps(self._idea,ensure_ascii=False)}\n规划{self.v_in.text() or '3'}卷×{self.c_in.text() or '4'}章")
+            d=self._parse(raw2)
+        if not d.get("volumes"):
+            self._status("大纲生成失败，请重试");return
         if not self.repo: self._init_db(self._idea)
         self.repo.conn.execute("DELETE FROM outline_nodes WHERE novel_id=?",(self.repo.novel_id,))
         self.tree.clear();sort=0;total=0
