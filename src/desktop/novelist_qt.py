@@ -327,6 +327,7 @@ class MainWin(QMainWindow):
                 self.detail_v.setHtml(f"<h3 style='color:{C['accent']}'>{title}</h3><p style='color:{C['muted']}'>待写作</p>")
 
     def _go(self, tag):
+        self._th = None  # 重置
         fb=self.fb_in.text().strip()
         if tag=="idea":
             self.detail_v.clear();self._status("生成中...");self.go_btn.setEnabled(False)
@@ -339,6 +340,8 @@ class MainWin(QMainWindow):
             self._th=StreamThread(self.cfg,P["idea"],u)
             self._th.chunk.connect(self._chunk)
             self._th.done.connect(self._idea_done)
+            self._th.error.connect(lambda e:(self.detail_v.setPlainText(f"错误: {e}"),self.go_btn.setEnabled(True)))
+            self._th.start()
         elif tag=="outline":
             if not self._idea: self.go_btn.setEnabled(True);return
             self.detail_v.clear();self._status("生成中...");self.go_btn.setEnabled(False)
@@ -357,6 +360,8 @@ class MainWin(QMainWindow):
             self._th=StreamThread(self.cfg,P["outline"],u)
             self._th.chunk.connect(self._chunk)
             self._th.done.connect(self._out_done)
+            self._th.error.connect(lambda e:(self.detail_v.setPlainText(f"错误: {e}"),self.go_btn.setEnabled(True)))
+            self._th.start()
         elif tag=="write":
             if not self.repo or not self._nid: self.detail_v.setPlainText("请先生成大纲，点击左侧某一节");self.go_btn.setEnabled(True);return
             self.detail_v.clear();self._status("写作中...");self.go_btn.setEnabled(False)
@@ -398,8 +403,6 @@ class MainWin(QMainWindow):
                 self.detail_v.setPlainText(f"错误: {e}")
             self.go_btn.setEnabled(True);self._status("")
         self.fb_in.clear()
-        self._th.error.connect(lambda e:(self.detail_v.setPlainText(f"错误: {e}"),self.go_btn.setEnabled(True)))
-        self._th.start()
 
     def _chunk(self,t):
         c=self.detail_v.textCursor();c.movePosition(QTextCursor.End);c.insertText(t)
