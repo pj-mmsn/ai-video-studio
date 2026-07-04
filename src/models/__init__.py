@@ -141,7 +141,7 @@ class LLMClient(BaseModelClient):
         }).encode()
 
         req = urllib.request.Request(
-            f"{self.base_url}/messages",
+            f"{self.base_url}/v1/messages",
             data=body,
             headers={
                 "Content-Type": "application/json",
@@ -153,11 +153,10 @@ class LLMClient(BaseModelClient):
 
         with urllib.request.urlopen(req, timeout=120) as resp:
             data = json.loads(resp.read())
-            # Anthropic 格式: content[0].text
             content = data.get("content", [])
-            if content and isinstance(content, list):
-                return content[0].get("text", "")
-            return ""
+            # Anthropic 返回多个 content 块(thinking/text)，取 text 类型
+            texts = [c.get("text", "") for c in content if c.get("type") == "text"]
+            return texts[0] if texts else ""
 
 
 # ================================================================
