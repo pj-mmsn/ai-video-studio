@@ -272,7 +272,12 @@ async function startProduce(){
             <p>📝 标题: <b>${r.title}</b></p>
             <p>🎬 场景: ${r.scenes} | 🎨 分镜: ${r.shots} | 🎥 片段: ${r.clips}</p>
             <p>💾 数据库: ${r.db_path}</p>
-            <p>📊 ${r.progress_report}</p>`;
+            <p>📊 ${r.progress_report}</p>
+            <hr style="margin:12px 0;border-color:var(--border)">
+            <p style="font-weight:600;margin-bottom:8px">🖼️ 分镜预览</p>
+            <div id="previewImgs" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px"></div>
+            <button onclick="loadPreview()" style="margin-top:8px;width:auto;padding:8px 20px">🔄 加载预览</button>
+            <p style="margin-top:8px">📁 产出: <a href="file:///${r.db_path.replace(/\\\\/g,'/').replace(/\/project.db/,'/../..')}" style="color:var(--accent)">打开文件夹</a></p>`;
           document.getElementById('result-box').style.display = 'block';
         }
         document.getElementById('overallProgress').style.width = (data.progress||0)+'%';
@@ -284,6 +289,24 @@ async function startProduce(){
     btn.disabled = false;
     btn.textContent = '🚀 开始制作';
   }
+}
+
+// 加载输出预览
+async function loadPreview(){
+  const div = document.getElementById('previewImgs');
+  div.innerHTML = '<span style="color:var(--muted)">加载中...</span>';
+  try{
+    const r = await fetch('/api/output');
+    const data = await r.json();
+    const pngs = data.files.filter(f=>f.type==='.png'||f.type==='.jpg');
+    if(pngs.length===0){ div.innerHTML='<span style="color:var(--muted)">暂无预览图，重新制作后可见</span>'; return; }
+    div.innerHTML = pngs.slice(0,10).map(f=>
+      `<div style="min-width:150px;text-align:center">
+        <img src="/api/output/${f.path}" style="width:150px;height:150px;object-fit:cover;border-radius:8px;border:1px solid var(--border)" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22150%22 height=%22150%22><rect fill=%22%23333%22 width=%22150%22 height=%22150%22/><text fill=%22%23888%22 x=%2250%22 y=%2280%22>暂无</text></svg>'">
+        <div style="font-size:10px;color:var(--muted);margin-top:4px">${f.name}</div>
+      </div>`
+    ).join('');
+  }catch(e){ div.innerHTML='<span style="color:var(--danger)">加载失败</span>'; }
 }
 </script>
 </body>
