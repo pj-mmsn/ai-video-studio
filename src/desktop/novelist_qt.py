@@ -286,7 +286,6 @@ class MainWin(QMainWindow):
         <blockquote style='color:{C["text"]};border-left:3px solid {C["accent"]};padding-left:12px;'>{d.get('premise','')}</blockquote>
         <h3 style='color:{C["muted"]}'>世界观</h3><p>{d.get('world_building','')}</p>
         <h3 style='color:{C["muted"]}'>角色</h3><pre style='color:{C["text"]}'>{chars}</pre>"""
-        self.content.setHtml(html)
         self.detail_v.setHtml(html)
         self.idea_in.setPlainText(d.get('premise',''))
 
@@ -380,12 +379,13 @@ class MainWin(QMainWindow):
         self.go_btn.setEnabled(True);self.out_status.setText("")
         d=self._parse(raw);self._idea=d
         chars="\n".join(f"{c['name']}({c.get('role','')}): {c.get('traits','')}" for c in d.get("characters",[]))
-        self.content.setHtml(f"""
+        html=f"""
         <h2 style='color:{C["accent"]}'>{d.get('title','')}</h2>
         <p style='color:{C["muted"]}'>{d.get('genre','')} · {d.get('hook','')}</p>
         <blockquote style='color:{C["text"]};border-left:3px solid {C["accent"]};padding-left:12px;'>{d.get('premise','')}</blockquote>
-        <h3 style='color:{C["muted"]}'>世界观</h3><p>{d.get('world_building','')}</p>
-        <h3 style='color:{C["muted"]}'>角色</h3><pre style='color:{C["text"]}'>{chars}</pre>""")
+        <h3>世界观</h3><p>{d.get('world_building','')}</p>
+        <h3>角色</h3><pre>{chars}</pre>"""
+        self.detail_v.setHtml(html)
         self.char_v.setText(chars);self.world_v.setText(d.get('world_building',''))
         self.proj_lbl.setText(f"📖 {d.get('title','')}")
         if not self.repo: self._init_db(d)
