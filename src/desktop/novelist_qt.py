@@ -223,8 +223,8 @@ class NovelistWindow(QMainWindow):
         from datetime import datetime
         now = datetime.now().isoformat()
         self.repo.conn.execute(
-            "INSERT INTO novels VALUES (?,?,?,?,?,?,?)",
-            (self.repo.novel_id, novel.title, "都市", novel.premise, "draft", now, now))
+            "INSERT INTO novels VALUES (?,?,?,?,?,?,?,?)",
+            (self.repo.novel_id, novel.title, "都市", novel.premise, "draft", 0, now, now))
         self.repo.conn.commit()
 
         # 三层大纲
