@@ -186,19 +186,19 @@ class MainWin(QMainWindow):
         h.addWidget(mid)
 
         # ── 右边栏 ──
-        right=QTabWidget()
-        right.setStyleSheet(f"""
+        self.right_tabs=QTabWidget()
+        self.right_tabs.setStyleSheet(f"""
             QTabWidget::pane{{background:{C['bg']};border:none;}}
             QTabBar::tab{{background:{C['panel']};color:{C['muted']};padding:8px 16px;font-size:12px;border:none;}}
             QTabBar::tab:selected{{color:{C['accent']};border-bottom:2px solid {C['accent']};}}
         """)
         self.detail_v=QTextBrowser();self.detail_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
-        right.addTab(self.detail_v,"当前内容")
+        self.right_tabs.addTab(self.detail_v,"当前内容")
         self.char_v=QTextBrowser();self.char_v.setStyleSheet(self.detail_v.styleSheet())
-        right.addTab(self.char_v,"角色")
+        self.right_tabs.addTab(self.char_v,"角色")
         self.world_v=QTextBrowser();self.world_v.setStyleSheet(self.detail_v.styleSheet())
-        right.addTab(self.world_v,"世界观")
-        h.addWidget(right)
+        self.right_tabs.addTab(self.world_v,"世界观")
+        h.addWidget(self.right_tabs)
         self.setCentralWidget(body)
 
     # ═══════════════════════════════════════ 逻辑 ═══════════════════════════════════════
@@ -280,6 +280,7 @@ class MainWin(QMainWindow):
         <h3 style='color:{C["muted"]}'>世界观</h3><p>{d.get('world_building','')}</p>
         <h3 style='color:{C["muted"]}'>角色</h3><pre style='color:{C["text"]}'>{chars}</pre>"""
         self.detail_v.setHtml(html)
+        self.right_tabs.setCurrentIndex(0)
         self.idea_in.setPlainText(d.get('premise',''))
 
     def _mode_switch(self, idx):
