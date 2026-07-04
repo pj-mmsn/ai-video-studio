@@ -179,13 +179,16 @@ class MainWin(QMainWindow):
         """)
         self.detail_v=QTextEdit();self.detail_v.setReadOnly(True)
         self.detail_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
-        self.right_tabs.addTab(self.detail_v,"当前内容")
+        self.detail_v.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.right_tabs.addTab(self._wrap_scroll(self.detail_v),"当前内容")
         self.char_v=QTextEdit();self.char_v.setReadOnly(True)
         self.char_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
-        self.right_tabs.addTab(self.char_v,"角色")
+        self.char_v.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.right_tabs.addTab(self._wrap_scroll(self.char_v),"角色")
         self.world_v=QTextEdit();self.world_v.setReadOnly(True)
         self.world_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
-        self.right_tabs.addTab(self.world_v,"世界观")
+        self.world_v.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.right_tabs.addTab(self._wrap_scroll(self.world_v),"世界观")
         
         # 中央+右侧之间可拖拽分割
         splitter=QSplitter(Qt.Horizontal)
@@ -207,6 +210,14 @@ class MainWin(QMainWindow):
         """)
 
     # ═══════════════════════════════════════ 逻辑 ═══════════════════════════════════════
+    def _wrap_scroll(self, widget):
+        """包裹一层QScrollArea确保滚动条可见"""
+        area=QScrollArea()
+        area.setWidgetResizable(True)
+        area.setWidget(widget)
+        area.setStyleSheet(f"QScrollArea{{background:transparent;border:none;}}")
+        return area
+
     def _scan(self):
         base=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         d=os.path.join(base,"output","novels")
