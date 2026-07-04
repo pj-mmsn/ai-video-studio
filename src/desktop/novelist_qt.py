@@ -178,10 +178,13 @@ class MainWin(QMainWindow):
             QTabBar::tab:selected{{color:{C['accent']};border-bottom:2px solid {C['accent']};}}
         """)
         self.detail_v=QTextBrowser();self.detail_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
+        self.detail_v.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.right_tabs.addTab(self.detail_v,"当前内容")
         self.char_v=QTextBrowser();self.char_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
+        self.char_v.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.right_tabs.addTab(self.char_v,"角色")
         self.world_v=QTextBrowser();self.world_v.setStyleSheet(f"background:transparent;color:{C['text']};border:none;padding:12px;font-size:13px;")
+        self.world_v.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.right_tabs.addTab(self.world_v,"世界观")
         
         # 中央+右侧之间可拖拽分割
