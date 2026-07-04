@@ -48,7 +48,7 @@ class StreamThread(QThread):
 # ── 提示词 ──
 P = {
     "idea":    "小说顾问。JSON:{title,premise,genre,hook,world_build,characters:[{name,role,traits}]}",
-    "outline": "大纲策划。JSON:{volumes:[{title,chapters:[{title,summary,sections:3}]}]}。和已有角色世界观一致",
+    "outline": "大纲策划。JSON:{volumes:[{title,chapters:[{title,summary,sections:[{title,summary}]}]}]}。每节8-12字概要。和已有角色世界观一致",
     "write":   "职业小说家。根据上下文写本节800-2000字。保持设定一致。末尾【本节摘要】一句话",
 }
 
@@ -347,6 +347,18 @@ class MainWin(QMainWindow):
             ctx=self.repo.get_writing_context(self._nid)
             self._status(f"上下文 ~{ctx['token_estimate']} tokens")
             n=self.repo.get_node(self._nid)
+            # 构建整章上下文：当前章节所有节概览
+            chap_ctx=""
+            if n:
+                parent_id=n.get("parent_id",0)
+                siblings=self.repo.conn.execute(
+                    "SELECT title,summary FROM outline_nodes WHERE parent_id=? ORDER BY sort_order",
+                    (parent_id,)).fetchall()
+                if siblings:
+                    chap_ctx="## 本章结构\n"
+                    for i,sib in enumerate(siblings):
+                        marker="← 当前" if sib["title"]==n["title"] else ""
+                        chap_ctx+=f"- 第{i+1}节 {sib['title']}: {sib.get('summary','')} {marker}\n"
             # 有反馈 → 带上已有内容一起给模型
             if fb and n.get("status")=="done":
                 sec=self.repo.conn.execute(
@@ -357,7 +369,7 @@ class MainWin(QMainWindow):
                 else:
                     u=f"{ctx['context_text']}\n---\n大纲: {n['title']}\n{fb}\n请写本节:"
             else:
-                u=f"{ctx['context_text']}\n---\n大纲: {n['title']}\n{fb if fb else ''}\n请写本节:"
+                u=f"{ctx['context_text']}\n{chap_ctx}\n---\n大纲: {n['title']}\n{fb if fb else ''}\n请写本节:"
             self._th=StreamThread(self.cfg,P["write"],u)
             self._th.chunk.connect(self._chunk)
             self._th.done.connect(self._write_done)
@@ -397,9 +409,18 @@ class MainWin(QMainWindow):
             for ci,ch in enumerate(vol.get("chapters",[]),1):
                 cid=self._add_node(vid,"chapter",sort,f"第{ci}章 {ch.get('title','')}",ch.get("summary",""));sort+=1
                 ci2=QTreeWidgetItem(vi2,[f"📄 第{ci}章 {ch.get('title','')}"]);ci2.setData(0,Qt.UserRole,cid)
-                for si in range(ch.get("sections",3)):
-                    sid=self._add_node(cid,"section",sort,f"第{si+1}节","");sort+=1;total+=1
-                    QTreeWidgetItem(ci2,[f"📝 第{si+1}节"]).setData(0,Qt.UserRole,sid)
+                # 每节带概要
+                secs=ch.get("sections",[])
+                if isinstance(secs,list):
+                    for si,sec in enumerate(secs):
+                        stitle=sec.get("title",f"第{si+1}节") if isinstance(sec,dict) else f"第{si+1}节"
+                        ssum=sec.get("summary","") if isinstance(sec,dict) else ""
+                        sid=self._add_node(cid,"section",sort,stitle,ssum);sort+=1;total+=1
+                        QTreeWidgetItem(ci2,[f"📝 {stitle}"]).setData(0,Qt.UserRole,sid)
+                else:
+                    for si in range(secs if isinstance(secs,int) else 3):
+                        sid=self._add_node(cid,"section",sort,f"第{si+1}节","");sort+=1;total+=1
+                        QTreeWidgetItem(ci2,[f"📝 第{si+1}节"]).setData(0,Qt.UserRole,sid)
                 ci2.setExpanded(True)
             vi2.setExpanded(True)
         self.repo.conn.commit()
