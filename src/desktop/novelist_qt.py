@@ -352,7 +352,7 @@ class MainWin(QMainWindow):
             self._th=StreamThread(self.cfg,P["idea"],u)
             self._th.chunk.connect(self._chunk)
             self._th.done.connect(self._idea_done)
-            self._th.error.connect(lambda e:(self.detail_v.setText((f"错误: {e}"),self.go_btn.setEnabled(True)))
+            self._th.error.connect(lambda e:(self.detail_v.setPlainText(f"错误: {e}"),self.go_btn.setEnabled(True)))
             self._th.start()
         elif tag=="outline":
             if not self._idea: self.go_btn.setEnabled(True);return
@@ -372,7 +372,7 @@ class MainWin(QMainWindow):
             self._th=StreamThread(self.cfg,P["outline"],u)
             self._th.chunk.connect(self._chunk)
             self._th.done.connect(self._out_done)
-            self._th.error.connect(lambda e:(self.detail_v.setText((f"错误: {e}"),self.go_btn.setEnabled(True)))
+            self._th.error.connect(lambda e:(self.detail_v.setPlainText(f"错误: {e}"),self.go_btn.setEnabled(True)))
             self._th.start()
         elif tag=="write":
             if not self.repo or not self._nid: self.detail_v.setText(("请先生成大纲，点击左侧某一节");self.go_btn.setEnabled(True);return
