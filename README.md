@@ -19,7 +19,7 @@
 ┌──────────────────────────────────────────────────┐
 │  Stage 1: 🎬 Director（剧本导演）                 │
 │  擅长: 创意推理、结构化输出                        │
-│  推荐: GPT-4o / DeepSeek-R1                      │
+│  推荐: deepseek-v4-pro / DeepSeek-R1 / GPT-4o    │
 │  输出: 场景列表（视觉/动效提示词 + 台词 + 镜头）   │
 │  📖 StoryBible 上下文注入（角色/场景一致性）       │
 └────────────────┬─────────────────────────────────┘
@@ -157,6 +157,10 @@ pipeline.close()
 LLM_API_KEY=sk-your-key
 LLM_BASE_URL=https://api.deepseek.com/v1    # DeepSeek / OpenAI / 智谱 任选
 LLM_MODEL=deepseek-chat
+
+# 也可用 Z.AI 的 deepseek-v4-pro（本项目同款，推理能力强，适合剧本创作）
+# LLM_BASE_URL=https://api.z.ai
+# LLM_MODEL=deepseek-v4-pro
 ```
 
 | 阶段 | 用哪个模型 | 最小配置下 |
