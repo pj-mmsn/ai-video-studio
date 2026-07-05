@@ -39,10 +39,14 @@ class NovelRepository:
             );
             CREATE TABLE IF NOT EXISTS outline_nodes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                novel_id TEXT, parent_id INTEGER,
-                level TEXT, sort_order INTEGER,
-                title TEXT, summary TEXT, status TEXT DEFAULT 'pending',
-                FOREIGN KEY(parent_id) REFERENCES outline_nodes(id)
+                novel_id TEXT,
+                volume_title TEXT DEFAULT '',
+                chapter_title TEXT DEFAULT '',
+                section_order INTEGER DEFAULT 0,
+                section_title TEXT DEFAULT '',
+                summary TEXT DEFAULT '',
+                status TEXT DEFAULT 'pending',
+                sort_order INTEGER DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS sections (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,7 +59,8 @@ class NovelRepository:
             CREATE TABLE IF NOT EXISTS characters (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 novel_id TEXT, name TEXT, role TEXT,
-                traits TEXT, arc TEXT, notes TEXT,
+                traits TEXT, desire TEXT DEFAULT '', fear TEXT DEFAULT '',
+                arc TEXT, notes TEXT,
                 first_appearance_section INTEGER,
                 updated_at TEXT
             );
@@ -88,8 +93,162 @@ class NovelRepository:
                 project_id TEXT, category TEXT, key TEXT, value TEXT,
                 source_scene INTEGER DEFAULT 0, updated_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                novel_id TEXT, content TEXT, created_at TEXT
+            );
         """)
         self.conn.commit()
+        self._migrate_outline()
+        self._migrate_characters()
+
+    def _migrate_outline(self):
+        """迁移旧数据：从 parent_id/level/title 树结构填充新的平铺列"""
+        import re
+
+        def clean_title(t, label):
+            """清洗标题：只去掉AI自己加的冗余前缀，保留我们的编号
+            例: "第1卷 第一卷：火种觉醒" → "第1卷 火种觉醒"
+                "第5章 第三章：辐射巢穴" → "第5章 辐射巢穴"
+            """
+            if not t: return ""
+            # 匹配模式：我们的编号(AI的冗余编号)：实际名称
+            # 我们的编号：第\d+卷/章 (如 "第1卷", "第5章")
+            # AI冗余编号：第[中文数字]+卷/章[：:] (如 "第一卷：", "第三章：")
+            m = re.match(r'^(第\d+[卷章])\s*第[一二三四五六七八九十\d]+[卷章][：:\s]*(.*)', t)
+            if m:
+                return f"{m.group(1)} {m.group(2).strip()}"
+            return t
+        # 添加新列（如果旧表没有）
+        try:
+            self.conn.execute("ALTER TABLE outline_nodes ADD COLUMN volume_title TEXT DEFAULT ''")
+        except: pass
+        try:
+            self.conn.execute("ALTER TABLE outline_nodes ADD COLUMN chapter_title TEXT DEFAULT ''")
+        except: pass
+        try:
+            self.conn.execute("ALTER TABLE outline_nodes ADD COLUMN section_order INTEGER DEFAULT 0")
+        except: pass
+        try:
+            self.conn.execute("ALTER TABLE outline_nodes ADD COLUMN section_title TEXT DEFAULT ''")
+        except: pass
+        try:
+            self.conn.execute("ALTER TABLE outline_nodes ADD COLUMN sort_order INTEGER DEFAULT 0")
+        except: pass
+
+        # Step 1: 迁移旧数据（旧列可能已被删除，容错）
+        try:
+            count = self.conn.execute(
+                "SELECT COUNT(*) FROM outline_nodes WHERE volume_title='' AND chapter_title='' AND section_title='' AND level='section'"
+            ).fetchone()[0]
+        except:
+            count = 0
+        if count > 0:
+            print(f"  🔄 迁移 {count} 条旧大纲数据...")
+            # 获取所有节点
+            nodes = self.conn.execute("SELECT * FROM outline_nodes ORDER BY sort_order, id").fetchall()
+            node_map = {n["id"]: dict(n) for n in nodes}
+
+            # 为每个 section 找到其所属的卷和章
+            for n in nodes:
+                if n["level"] == "section":
+                    vol_title = ""
+                    ch_title = ""
+                    sec_order = 0
+                    sec_title = n["title"] or ""
+
+                    # 往上找 chapter
+                    pid = n["parent_id"]
+                    while pid and pid in node_map:
+                        parent = node_map[pid]
+                        if parent["level"] == "chapter":
+                            ch_title = clean_title(parent["title"] or "", "chapter")
+                            break
+                        pid = parent.get("parent_id")
+
+                    # 往上找 volume
+                    pid = n["parent_id"]
+                    while pid and pid in node_map:
+                        parent = node_map[pid]
+                        if parent["level"] == "volume":
+                            vol_title = clean_title(parent["title"] or "", "volume")
+                            break
+                        pid = parent.get("parent_id")
+
+                    # 计算节序号（同一章内的排序）
+                    if ch_title:
+                        siblings = self.conn.execute(
+                            "SELECT id FROM outline_nodes WHERE parent_id=? ORDER BY sort_order, id",
+                            (n["parent_id"],)
+                        ).fetchall()
+                        for i, sib in enumerate(siblings):
+                            if sib["id"] == n["id"]:
+                                sec_order = i + 1
+                                break
+
+                    self.conn.execute(
+                        "UPDATE outline_nodes SET volume_title=?, chapter_title=?, section_order=?, section_title=? WHERE id=?",
+                        (vol_title, ch_title, sec_order, sec_title, n["id"])
+                    )
+                elif n["level"] == "chapter":
+                    self.conn.execute(
+                        "UPDATE outline_nodes SET chapter_title=? WHERE id=?",
+                        (clean_title(n["title"] or "", "chapter"), n["id"])
+                    )
+                elif n["level"] == "volume":
+                    self.conn.execute(
+                        "UPDATE outline_nodes SET volume_title=? WHERE id=?",
+                        (clean_title(n["title"] or "", "volume"), n["id"])
+                    )
+
+            self.conn.commit()
+            print(f"  ✅ 迁移完成")
+
+            # 填充 sort_order（按 id 保留原始插入顺序）
+            all_rows = self.conn.execute(
+                "SELECT id FROM outline_nodes WHERE section_title != '' ORDER BY id"
+            ).fetchall()
+            for i, r in enumerate(all_rows):
+                self.conn.execute("UPDATE outline_nodes SET sort_order=? WHERE id=?", (i, r["id"]))
+            self.conn.commit()
+
+        # 清洗已有标题（去冗余前缀）
+        existing = self.conn.execute(
+            "SELECT id, volume_title, chapter_title FROM outline_nodes WHERE volume_title LIKE '第%卷%' OR chapter_title LIKE '第%章%'"
+        ).fetchall()
+        if existing:
+            cleaned = 0
+            for r in existing:
+                new_vol = clean_title(r["volume_title"], "volume")
+                new_ch = clean_title(r["chapter_title"], "chapter")
+                if new_vol != r["volume_title"] or new_ch != r["chapter_title"]:
+                    self.conn.execute(
+                        "UPDATE outline_nodes SET volume_title=?, chapter_title=? WHERE id=?",
+                        (new_vol, new_ch, r["id"])
+                    )
+                    cleaned += 1
+            if cleaned:
+                self.conn.commit()
+                print(f"  🧹 清洗了 {cleaned} 条标题")
+
+        # 删除旧列（SQLite 3.35+）
+        try:
+            self.conn.execute("ALTER TABLE outline_nodes DROP COLUMN parent_id")
+        except: pass
+        try:
+            self.conn.execute("ALTER TABLE outline_nodes DROP COLUMN level")
+        except: pass
+        try:
+            self.conn.execute("ALTER TABLE outline_nodes DROP COLUMN title")
+        except: pass
+        self.conn.commit()
+
+    def _migrate_characters(self):
+        """添加 desire/fear 列（如果旧表没有）"""
+        for col in ["desire", "fear"]:
+            try:
+                self.conn.execute(f"ALTER TABLE characters ADD COLUMN {col} TEXT DEFAULT ''")
+            except: pass
 
     # ================================================================
     # 大纲管理
@@ -131,17 +290,29 @@ class NovelRepository:
                      new_characters: list[dict] = None,
                      new_threads: list[dict] = None,
                      new_rules: list[dict] = None) -> int:
-        """保存一节内容 + 自动提取的角色/伏笔/世界观"""
+        """保存一节内容（已存在则更新，否则新增）"""
         now = datetime.now().isoformat()
         word_count = len(content)
 
-        # 保存正文
-        cursor = self.conn.execute(
-            """INSERT INTO sections (novel_id, outline_node_id, content, word_count, summary, created_at, updated_at)
-            VALUES (?,?,?,?,?,?,?)""",
-            (self.novel_id, node_id, content, word_count, summary, now, now)
-        )
-        section_id = cursor.lastrowid
+        # 检查是否已有记录
+        existing = self.conn.execute(
+            "SELECT id FROM sections WHERE outline_node_id=? ORDER BY id DESC LIMIT 1",
+            (node_id,)
+        ).fetchone()
+
+        if existing:
+            self.conn.execute(
+                "UPDATE sections SET content=?, word_count=?, summary=?, updated_at=? WHERE id=?",
+                (content, word_count, summary, now, existing["id"])
+            )
+            section_id = existing["id"]
+        else:
+            cursor = self.conn.execute(
+                """INSERT INTO sections (novel_id, outline_node_id, content, word_count, summary, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?)""",
+                (self.novel_id, node_id, content, word_count, summary, now, now)
+            )
+            section_id = cursor.lastrowid
 
         # 标记大纲节点为已完成
         self.update_node_status(node_id, "done")
@@ -203,17 +374,11 @@ class NovelRepository:
         parts = []
         token_est = 0
 
-        # 1. 当前位置 + 父级大纲 (~300 tokens)
-        context_header = f"当前位置: {node['level']}: {node['title']}\n概要: {node.get('summary','')}\n"
-        # 往上找父节点
-        parent_id = node.get("parent_id")
-        while parent_id:
-            parent = self.get_node(parent_id)
-            if parent:
-                context_header += f"所属{parent['level']}: {parent['title']}\n"
-                parent_id = parent.get("parent_id")
-            else:
-                break
+        # 1. 当前位置
+        vol = node.get("volume_title", "")
+        ch = node.get("chapter_title", "")
+        sec = node.get("section_title", "")
+        context_header = f"当前位置: {vol} > {ch} > 第{node.get('section_order',0)}节 {sec}\n概要: {node.get('summary','')}\n"
         parts.append(context_header)
         token_est += len(context_header) // 2
 
@@ -227,22 +392,11 @@ class NovelRepository:
             parts.append(recap)
             token_est += len(recap) // 2
 
-        # 3. 出场角色——找本章已出现过的角色 (~500 tokens)
+        # 3. 出场角色——全部角色（简化，不再依赖 parent_id 树结构）
         characters = self.conn.execute(
-            "SELECT DISTINCT c.name, c.role, c.traits FROM characters c "
-            "JOIN character_scenes cs ON c.id=cs.character_id "
-            "JOIN sections s ON cs.section_id=s.id "
-            "WHERE c.novel_id=? AND s.outline_node_id IN "
-            "(SELECT id FROM outline_nodes WHERE parent_id=?)",
-            (self.novel_id, node.get("parent_id"))
+            "SELECT name, role, traits FROM characters WHERE novel_id=?",
+            (self.novel_id,)
         ).fetchall()
-
-        # 如果本章还没有角色，取全书的
-        if not characters:
-            characters = self.conn.execute(
-                "SELECT name, role, traits FROM characters WHERE novel_id=?",
-                (self.novel_id,)
-            ).fetchall()
 
         if characters:
             char_text = "出场角色(请严格保持设定):\n"
@@ -301,13 +455,13 @@ class NovelRepository:
     # ================================================================
 
     def get_progress(self) -> dict:
-        """获取总体进度"""
+        """获取总体进度（使用新平铺列）"""
         total = self.conn.execute(
-            "SELECT COUNT(*) FROM outline_nodes WHERE novel_id=? AND level='section'",
+            "SELECT COUNT(*) FROM outline_nodes WHERE novel_id=? AND section_title != ''",
             (self.novel_id,)
         ).fetchone()[0]
         done = self.conn.execute(
-            "SELECT COUNT(*) FROM outline_nodes WHERE novel_id=? AND level='section' AND status='done'",
+            "SELECT COUNT(*) FROM outline_nodes WHERE novel_id=? AND section_title != '' AND status='done'",
             (self.novel_id,)
         ).fetchone()[0]
         words = self.conn.execute(
@@ -330,3 +484,24 @@ class NovelRepository:
 
     def close(self):
         self.conn.close()
+
+    # ================================================================
+    # 审稿报告
+    # ================================================================
+
+    def save_review(self, content: str):
+        """保存审稿报告"""
+        now = datetime.now().isoformat()
+        self.conn.execute(
+            "INSERT INTO reviews (novel_id, content, created_at) VALUES (?,?,?)",
+            (self.novel_id, content, now)
+        )
+        self.conn.commit()
+
+    def get_latest_review(self) -> Optional[str]:
+        """获取最新审稿报告"""
+        row = self.conn.execute(
+            "SELECT content FROM reviews WHERE novel_id=? ORDER BY id DESC LIMIT 1",
+            (self.novel_id,)
+        ).fetchone()
+        return row["content"] if row else None

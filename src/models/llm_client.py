@@ -35,7 +35,7 @@ def _chat_openai(api_key, base_url, model, system, user, temp):
             {"role": "user", "content": user},
         ],
         "temperature": temp,
-        "max_tokens": 4096,
+        "max_tokens": 8192,
     }).encode()
 
     req = urllib.request.Request(
@@ -58,7 +58,7 @@ def _chat_anthropic(api_key, base_url, model, system, user, temp):
         "model": model,
         "system": system,
         "messages": [{"role": "user", "content": user}],
-        "max_tokens": 4096,
+        "max_tokens": 8192,
         "temperature": temp,
     }).encode()
 
@@ -96,7 +96,7 @@ def chat_stream(config: dict, system_prompt: str, user_prompt: str,
         "model": model,
         "system": system_prompt,
         "messages": [{"role": "user", "content": user_prompt}],
-        "max_tokens": 4096,
+        "max_tokens": 8192,
         "temperature": temp,
         "stream": True,
     }).encode()

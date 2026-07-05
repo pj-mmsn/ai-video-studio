@@ -16,6 +16,7 @@ def load_config() -> dict:
         "api_key": os.getenv("LLM_API_KEY", ""),
         "base_url": os.getenv("LLM_BASE_URL", "https://api.deepseek.com/anthropic"),
         "model": os.getenv("LLM_MODEL", "deepseek-v4-pro"),
+        "model_light": os.getenv("LLM_MODEL_LIGHT", "deepseek-v4-flash"),
         "temperature": float(os.getenv("LLM_TEMPERATURE", "0.7")),
         "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "4096")),
 

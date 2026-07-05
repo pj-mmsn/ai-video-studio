@@ -1,100 +1,34 @@
-# 🎬 AI Video Studio — 多模型协作视频制作流水线
+# ✍️ AI 小说家 — 桌面端智能写作工具
 
-> **一句话**：推理模型写剧本 → 图像模型画分镜 → 视频模型制成片 → 合成导出 MP4。每个模型做自己最擅长的事。
+> PyQt5 桌面应用，AI 驱动的长篇小说创作助手。从构思到成稿，五步流水线。
 
-[![Version](https://img.shields.io/badge/version-2.0-blue)](https://github.com/pj-mmsn/ai-video-studio)
-[![Python](https://img.shields.io/badge/python-3.10+-green)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
+[![PyQt5](https://img.shields.io/badge/GUI-PyQt5-green)](https://www.riverbankcomputing.com/software/pyqt/)
+[![DeepSeek](https://img.shields.io/badge/LLM-DeepSeek%20V4%20Pro-purple)](https://api.deepseek.com)
 [![License](https://img.shields.io/badge/license-MIT-orange)](LICENSE)
 
 ---
 
-## 🧠 核心理念
+## 🎯 概述
 
-传统视频制作需要一个人兼具创意、美术、拍摄能力。AI 视频工作室把这个"全能人"拆成**四个专业 AI Agent + 三个审查员**：
+**五模式 AI 写作流水线**：💡构思 → 📋大纲 → ✍️写作 → 📝修订 → 🔍审稿
 
-```
-你的创意（一句话）
-       │
-       ▼
-┌──────────────────────────────────────────────────┐
-│  Stage 1: 🎬 Director（剧本导演）                 │
-│  擅长: 创意推理、结构化输出                        │
-│  推荐: deepseek-v4-pro / DeepSeek-R1 / GPT-4o    │
-│  输出: 场景列表（视觉/动效提示词 + 台词 + 镜头）   │
-│  📖 StoryBible 上下文注入（角色/场景一致性）       │
-└────────────────┬─────────────────────────────────┘
-                 │ Script  ──→  🔍 Review
-                 ▼
-┌──────────────────────────────────────────────────┐
-│  Stage 2: 🎨 Storyboard（分镜师）                 │
-│  擅长: 文字→图像跨模态生成                         │
-│  推荐: DALL-E 3 / Stable Diffusion               │
-│  输出: 5-8张分镜图 + 镜头语言标注                 │
-└────────────────┬─────────────────────────────────┘
-                 │ Shots   ──→  🔍 Review
-                 ▼
-┌──────────────────────────────────────────────────┐
-│  Stage 3: 🎥 Videographer（摄像师）               │
-│  擅长: 图像→视频动态生成                           │
-│  推荐: RunwayML / Pika / Sora                    │
-│  输出: 视频片段（每场景一段）                     │
-└────────────────┬─────────────────────────────────┘
-                 │ Clips   ──→  🔍 Review
-                 ▼
-┌──────────────────────────────────────────────────┐
-│  Stage 4: 🎬 Composer（合成导出）                 │
-│  本地工具: 图片序列 → MP4 + 字幕 + 旁白            │
-│  输出: 可播放的视频文件                           │
-└────────────────┬─────────────────────────────────┘
-                 │
-                 ▼
-         🎉 可播放的 MP4 视频
-```
+选择模型、输入想法，AI 帮你完成从世界观构建到逐节写作的全过程。支持断点续写、角色管理、全文导出。
 
-**设计模式**：顺序管道 + 反馈循环（CrewAI 模式），每个阶段产出持久化到 SQLite，支持断点续传。
-
----
-
-## 📂 项目结构
+### 界面预览
 
 ```
-ai-video-studio/
-│
-├── config.py                         # 三模型独立配置
-├── requirements.txt                  # 依赖（核心/可选）
-├── .env.example                      # API Key 模板
-│
-├── src/
-│   ├── models/__init__.py            # 📡 模型客户端（LLM/Image/Video + Mock）
-│   ├── agents/
-│   │   ├── director.py               # Stage 1: 剧本导演（Few-shot + 圣经注入）
-│   │   ├── storyboard.py             # Stage 2: 分镜师
-│   │   ├── videographer.py           # Stage 3: 摄像师
-│   │   └── reviewer.py               # 🔍 审查员（CrewAI 反馈循环）
-│   ├── db/
-│   │   ├── schema.py                 # 💾 6表数据模型
-│   │   └── repository.py             # 💾 CRUD + 断点续传 + 进度查询
-│   ├── context/
-│   │   └── bible.py                  # 📖 故事圣经（跨场景角色/场景一致性）
-│   ├── tools/
-│   │   └── composer.py               # 🎬 视频合成 + 旁白 + 字幕
-│   ├── pipeline/
-│   │   └── pipeline.py               # 🔗 编排器（4 Stage + 3 Review）
-│   ├── cli/
-│   │   └── app.py                    # 💻 CLI（交互式 + 命令行参数）
-│   └── logging_config.py             # 📋 统一日志（控制台 + 文件）
-│
-├── examples/
-│   └── demo.py                        # 🚀 一键体验（Mock模式）
-│
-├── docs/
-│   └── OPTIMIZATION_REPORT.md         # 📊 优化分析报告
-│
-└── output/                            # 📁 产出目录
-    ├── projects/<id>/project.db       #   SQLite 项目数据库
-    ├── scripts/                       #   剧本 JSON
-    ├── storyboard/                    #   分镜图 PNG
-    └── video/                         #   MP4 + 字幕
+┌──────────┬────────────────────┬───────────────┐
+│  💡 构思  │   📘 第1卷 火种觉醒   │  当前内容      │
+│  📋 大纲  │    📄 第1章 废墟..   │  角色          │
+│  ✍️ 写作  │     📝 第1节 ✓     │  世界观        │
+│  🔍 审稿  │     📝 第2节 ✓     │  大纲(可编辑)   │
+│  📥 导出  │    📄 第2章 基因..   │  全文          │
+│          │   📘 第2卷 霸权..   │               │
+│  模型▾   │                    │               │
+│          │  [修改意见...]      │               │
+│          │  [执行] [✏编辑]    │               │
+└──────────┴────────────────────┴───────────────┘
 ```
 
 ---
@@ -103,123 +37,223 @@ ai-video-studio/
 
 ```bash
 # 1. 安装依赖
-cd ai-video-studio
 pip install -r requirements.txt
 
-# 2. 一键体验（Mock 模式，零配置，零成本）
-python examples/demo.py
-
-# 3. 接真实 API（可选——只填一行就能让 Stage1 用上真 LLM）
+# 2. 配置 API Key
 cp .env.example .env
 # 编辑 .env → 填 LLM_API_KEY
 
-# 4. 命令行运行
-python -m src.cli.app --idea "猫在太空站冒险" --style anime
+# 3. 启动
+python -m src.desktop.novelist_qt
 ```
 
----
-
-## 🎮 Python API
-
-```python
-from src.pipeline.pipeline import VideoPipeline
-
-# 完整流水线
-pipeline = VideoPipeline(
-    director_model="gpt-4o",
-    use_mock=True,           # Mock 模式，无 API Key
-    enable_reviewer=True,    # 启用审查
-    reviewer_strictness=6,   # 审查严格度
-    project_id="my_film",    # 项目 ID（支持断点续传）
-)
-
-production = pipeline.produce("一只猫在太空站冒险", style="anime")
-print(production.progress_report())
-# 剧本✅ → 分镜✅ → 视频✅ → 合成✅ | 审查3次
-
-# 断点续传——同一个 project_id 再次调用
-pipeline2 = VideoPipeline(project_id="my_film")
-pipeline2.produce("...")  # 自动跳过已完成阶段
-
-pipeline.close()
-```
-
----
-
-## 🔌 模型选用
-
-核心理念：**不同任务用不同擅长的模型**——推理模型写剧本、图像模型画分镜、视频模型制成片。
-
-### 最小配置（1 个 Key 即可跑通 Stage 1+2+3+4）
-
-```bash
-# .env —— 一个 OpenAI 兼容 Key 覆盖 Stage1(剧本) + Stage2(分镜图)
+**.env 最小配置**：
+```env
 LLM_API_KEY=sk-your-key
-LLM_BASE_URL=https://api.deepseek.com/v1    # DeepSeek / OpenAI / 智谱 任选
-LLM_MODEL=deepseek-chat
-
-# 也可用 Z.AI 的 deepseek-v4-pro（本项目同款，推理能力强，适合剧本创作）
-# LLM_BASE_URL=https://api.z.ai
-# LLM_MODEL=deepseek-v4-pro
+LLM_BASE_URL=https://api.deepseek.com/anthropic
+LLM_MODEL=deepseek-v4-pro
+LLM_MODEL_LIGHT=deepseek-v4-flash   # 审稿用（可选）
 ```
 
-| 阶段 | 用哪个模型 | 最小配置下 |
-|------|-----------|-----------|
-| Stage 1 剧本 | GPT-4o / DeepSeek-R1 / DeepSeek-V3 | ✅ 真实 LLM 生成 |
-| Stage 2 分镜图 | DALL-E 3 | ⚠️ 共用 LLM Key 或降级 Mock 占位图 |
-| Stage 3 视频片段 | RunwayML / Pika | ⚠️ 需单独 Key 或降级 Mock 静态帧 |
-| Stage 4 合成导出 | moviepy（本地工具） | ✅ 不需要任何 Key |
+---
 
-### 完整配置（每个阶段专用模型，效果最佳）
+## 🏗️ 架构
 
-```bash
-# Stage 1: 剧本——推理模型
-DIRECTOR_API_KEY=sk-xxx
-DIRECTOR_MODEL=gpt-4o          # 或 deepseek-reasoner（推理更强）
+### 技术栈
 
-# Stage 2: 分镜图——图像生成模型
-IMAGE_API_KEY=sk-xxx
-IMAGE_MODEL=dall-e-3           # 或 stable-diffusion-xl（需 Replicate API）
+| 层 | 技术 | 说明 |
+|---|------|------|
+| UI | PyQt5 | 单窗口多面板桌面应用 |
+| LLM | DeepSeek V4 Pro/Flash | Anthropic 兼容 API，流式+非流式 |
+| DB | SQLite | 单文件，平铺表设计，9 张表 |
+| 配置 | python-dotenv | .env 动态读取 |
+| 代码量 | ~3200 行 | 纯 Python + 标准库 |
 
-# Stage 3: 视频片段——视频生成模型（可选，目前 API 未完全开放）
-VIDEO_API_KEY=your-key
-VIDEO_MODEL=runway-gen3        # 或 pika-labs
+### 数据流
+
+```
+┌────────┐   ┌────────┐   ┌────────┐   ┌────────┐   ┌────────┐
+│ 💡构思  │→  │ 📋大纲  │→  │ ✍️写作  │→  │ 📝修订  │→  │ 🔍审稿  │
+└───┬────┘   └───┬────┘   └───┬────┘   └───┬────┘   └───┬────┘
+    │            │            │            │            │
+    ▼            ▼            ▼            ▼            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   LLM Client (chat/chat_stream)              │
+│            https://api.deepseek.com/anthropic                │
+│                   1M Token 上下文窗口                         │
+└─────────────────────────────────────────────────────────────┘
+    │            │            │            │            │
+    ▼            ▼            ▼            ▼            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    SQLite (novel.db)                         │
+│  novels │ outline_nodes │ sections │ characters │ reviews   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-> 建议：先用最小配置跑 Mock 模式体验流程 → 配一个 LLM Key 升级 Stage1 → 有需要再加图像/视频 Key。
+### 写作时发给模型的上下文
+
+```
+┌─ System Prompt ────────────────────────┐
+│ 你是职业小说家。从【前情提要】结尾接续...   │
+└────────────────────────────────────────┘
+┌─ User Prompt ──────────────────────────┐
+│ 【大纲】 本章结构 + 当前节概要           │
+│ 【前情提要】 前卷全文 + 当前卷已写内容     │
+│ （角色设定 + 世界观）                    │
+│ 【原文】 仅修订模式                      │
+│ 【修改意见】 有反馈时                     │
+└────────────────────────────────────────┘
+```
+
+---
+
+## 📂 项目结构
+
+```
+ai-video-studio/
+├── .env                          # API Key（gitignore）
+├── config.py              (35L)  # 配置加载
+├── requirements.txt
+│
+├── src/
+│   ├── desktop/                  # ⭐ 桌面端小说家（主力）
+│   │   ├── novelist_qt.py (1802L) # 主窗口：五模式 + UI
+│   │   ├── theme.py       (132L)  # 配色 + 样式工厂
+│   │   ├── prompts.py     (202L)  # 5 种 System Prompt
+│   │   └── utils.py       (368L)  # 清洗/解析/导出/上下文
+│   │
+│   ├── db/
+│   │   └── novel_repository.py (507L) # SQLite CRUD + 迁移
+│   │
+│   ├── models/
+│   │   └── llm_client.py  (146L)  # chat() + chat_stream()
+│   │
+│   ├── agents/                    # 视频管线 Agent（独立模块）
+│   │   ├── director.py           # 剧本导演
+│   │   ├── storyboard.py         # 分镜师
+│   │   └── videographer.py       # 摄像师
+│   │
+│   └── pipeline/
+│       └── pipeline.py            # 视频制作编排器
+│
+├── docs/
+│   └── HANDOFF.md                 # 项目交接文档
+│
+└── output/novels/<项目ID>/
+    └── novel.db                   # SQLite 数据库
+```
 
 ---
 
 ## 🎯 核心特性
 
-| 特性 | 说明 |
-|------|------|
-| 🔄 断点续传 | SQLite 持久化，崩溃后自动恢复 |
-| 📖 StoryBible | LLM 自动提取角色/场景，跨场景一致 |
-| 🔍 审查反馈 | 每阶段 Review，不合格自动重试 |
-| 🎬 视频合成 | 图片序列 → MP4 + 字幕 + 旁白 |
-| 🧪 Mock 模式 | 无 API Key 完整跑通全流程 |
-| 📋 命令行 | `--idea` `--style` `--mock` `--resume` |
-| 📊 分析报告 | `docs/OPTIMIZATION_REPORT.md` 含优化前后对比 |
+### 五模式写作流水线
+
+| 模式 | 功能 | 模型推荐 |
+|------|------|:--:|
+| 💡 **构思** | 想法→完整世界观+角色（JSON） | Pro |
+| 📋 **大纲** | 卷→章→节三级结构（每节带概要） | Pro |
+| ✍️ **写作** | 上下文驱动逐节创作（800-2000字） | Pro |
+| 📝 **修订** | 反馈驱动精准修改（决策表判断范围） | Pro |
+| 🔍 **审稿** | 全文对照大纲检查差异+连贯性 | Flash |
+
+### 上下文策略
+
+- **1M Token 窗口**：前卷全文 + 当前卷已写内容全塞入
+- **接续锚点**：上下文末尾标注上一节结尾段落，引导模型精准接续
+- **角色+世界观注入**：每节写作时自动附带角色设定和世界观约束
+
+### 大纲管理
+
+- 平铺表设计（volume_title + chapter_title + section_order），不用自引用树
+- 全局章节编号顺延（卷 2 第 1 章→第 5 章）
+- 右键菜单：改标题/改概要/标记完成/删除
+- "大纲"标签页：全文可编辑，切换标签自动保存
+- 批量替换：一键替换大纲中所有文本
+
+### 角色管理
+
+- 独立的角色编辑面板（名/身份/性格/欲望/恐惧）
+- 增删改查 + DB 持久化
+- 构思阶段 AI 自动生成角色
+
+### 全文导出
+
+- TXT：纯净文本，卷章层级标题
+- HTML：深色主题 + 目录 + 排版
+
+### 其他
+
+- 🔄 断点续写：关闭后重新打开，大纲和已写内容完整保留
+- 🎨 深色主题：Tokyo Night 配色
+- ⌨️ 键盘快捷键：Ctrl+Enter 执行、Ctrl+F 搜索、Ctrl+E 导出
+- 📊 实时进度：已完成节数、总字数
+- 🖨️ 终端打印：每次 LLM 调用打印完整 system/user prompt
+- 🔀 模型切换：侧边栏下拉框随时切换 Pro/Flash
+
+---
+
+## 🛠️ 开发要点
+
+### 数据库设计：树形 → 平铺
+
+```sql
+-- 旧设计（自引用树）：查询递归、孤儿数据
+CREATE TABLE nodes (id, parent_id, level, title);
+
+-- 新设计（平铺三列）：一条 ORDER BY 搞定
+CREATE TABLE nodes (
+  volume_title  TEXT,    -- 卷名
+  chapter_title TEXT,    -- 章名
+  section_order INTEGER, -- 第几节
+  section_title TEXT,    -- 节标题
+  sort_order    INTEGER  -- 全局排序（铁律：永远用整数排）
+);
+```
+
+### Prompt 工程经验
+
+1. **Few-shot 示例**：格式合规率 ~60% → ~95%
+2. **首尾效应**：最重要约束放第一句和最后一句
+3. **标签对齐**：System Prompt 和 User Prompt 用相同的 `【标签】` 格式
+4. **接续锚点**：上下文末尾标注上一节结尾，引导精准接续
+5. **决策表代替模糊指令**：用"如果A→做X"替代"尽量少改"
+
+### 关键踩坑
+
+- **同步调用卡死 UI**：改用 `QThread` + `chat_stream()` 流式
+- **LEFT JOIN 返回旧版本**：`save_section` 改用 UPDATE OR INSERT
+- **字母序排序错误**："第10章"排在"第2章"前 → 加 `sort_order` 整数列
+- **迁移覆盖排序**：每次启动重排 sort_order → 改为仅首次迁移
+
+---
+
+## 🔮 路线图
+
+- [x] 五模式写作流水线
+- [x] 角色管理 + 全文导出
+- [x] 大纲可编辑 + 批量替换
+- [x] 审稿模式（全文对照大纲）
+- [x] 上下文策略优化（1M 窗口 + 接续锚点）
+- [ ] 接入视频生成 API（即梦/Kling）
+- [ ] Vector DB 角色/伏笔检索（长篇 >10 卷）
+- [ ] 多 Agent 协作（导演→分镜→摄像师）
 
 ---
 
 ## 📚 相关知识库
 
-| 文档 | 内容 |
+| 位置 | 内容 |
 |------|------|
-| `Java手册/06-AI与Agent/10-Multi-Agent` | 四种协作模式 |
-| `Java手册/06-AI与Agent/06-Prompt工程` | Few-shot 设计 |
-| `经验笔记/AI-Agent/多模型协作-视频工作室.md` | 本项目构建经验 |
-| `经验笔记/AI-Agent/项目实战-从零构建Agent.md` | 8条常犯错误 |
-| 技能: `project-builder` | 从零构建项目的标准流程 |
+| `Java手册/06-AI与Agent/06-Prompt工程` | Prompt 设计原理 + 实战经验 |
+| `Java手册/06-AI与Agent/05-RAG` | 1M 上下文 vs RAG 决策 |
+| `Java手册/06-AI与Agent/03-记忆系统` | 平铺表设计 + sort_order 铁律 |
+| `Java手册/06-AI与Agent/10-Multi-Agent` | MCP/A2A 协议 + 单体够用判断 |
+| `经验笔记/AI-Agent/项目实战/AI小说家.md` | 本项目完整踩坑记录 |
+| `经验笔记/AI-Agent/Prompt工程实战.md` | 5 条 Prompt 设计经验 |
 
 ---
 
-## 📋 同系列项目
+## 📄 License
 
-| 项目 | 模式 | Agent 数 |
-|------|------|:--:|
-| [ai-agent-starter](https://github.com/pj-mmsn/ai-agent-starter) | 单 Agent + 工具 | 1 |
-| [ai-agent-java](https://github.com/pj-mmsn/ai-agent-java) | 单 Agent (Java) | 1 |
-| **ai-video-studio** ⭐ | **多 Agent 管道** | **4** |
+MIT
