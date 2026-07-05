@@ -1,4 +1,6 @@
 # ✍️ AI 小说家 — 桌面端智能写作工具
+<img width="1322" height="882" alt="image" src="https://github.com/user-attachments/assets/a4af7994-f9b4-45ae-9a1c-7f5485660bd3" />
+
 
 > PyQt5 桌面应用，AI 驱动的长篇小说创作助手。从构思到成稿，五步流水线。
 
