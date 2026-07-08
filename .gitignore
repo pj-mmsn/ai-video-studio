@@ -24,6 +24,5 @@ Thumbs.db
 frontend/node_modules/
 frontend/dist/
 src/web/static/
-frontend/public/videos/
-frontend/dist/videos/
 frontend/public/bg.mp4
+frontend/public/videos/mononoke.mp4
