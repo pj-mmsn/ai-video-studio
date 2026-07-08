@@ -1,21 +1,25 @@
-# AI Video Studio - 多模型视频工作室
+# AI 小说家 — 核心依赖
+# 完整依赖见 pyproject.toml
 
-# LLM API
-openai>=1.0.0
+# Web 框架
+fastapi>=0.110.0
+uvicorn>=0.29.0
+
+# 配置
 python-dotenv>=1.0.0
-
-# CLI
-rich>=13.0.0
 
 # 图像处理（Mock 模式用）
 Pillow>=10.0.0
 
-# 数据库（项目持久化 + 断点续传）
-# sqlite3 是 Python 内置模块，无需额外安装
+# 可选：视频合成
+# moviepy>=1.0.3
 
-# Web 可视化界面
-fastapi>=0.110.0
-uvicorn>=0.29.0
+# 可选：桌面 GUI
+# PyQt5>=5.15.0
+# pywebview>=5.0
 
-# 语音合成（可选，为视频加旁白）
+# 可选：语音合成
 # edge-tts>=6.1.0
+
+# 可选：CLI 美化
+# rich>=13.0.0

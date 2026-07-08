@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🔀 AI Studio — 工作流面板</title>
+<style>
+:root{--bg:#0d0d14;--panel:#13131f;--border:#1e1e32;--accent:#7c5ce7;--text:#d0d0d8;--muted:#666;--idle:#2a2a3a;--running:#f0c060;--done:#00d2a0;--failed:#ff5c5c;--waiting:#6c9fff}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px}
+h1{font-size:20px;color:var(--accent);margin-bottom:4px}
+.subtitle{color:var(--muted);font-size:13px;margin-bottom:20px}
+#graph{display:flex;align-items:center;gap:0;overflow-x:auto;padding:20px 0;min-height:200px;flex-wrap:wrap}
+.node{display:flex;align-items:center;gap:0}
+.node-box{background:var(--panel);border:2px solid var(--border);border-radius:12px;padding:16px 20px;text-align:center;min-width:120px;transition:.3s}
+.node-box.running{border-color:var(--running);box-shadow:0 0 16px rgba(240,192,96,.3)}
+.node-box.done{border-color:var(--done)}
+.node-box.failed{border-color:var(--failed)}
+.node-box.waiting{border-color:var(--waiting);animation:pulse 1.5s infinite}
+@keyframes pulse{50%{box-shadow:0 0 20px rgba(108,159,255,.4)}}
+.node-box .icon{font-size:28px}
+.node-box .name{font-weight:600;margin:4px 0;font-size:14px}
+.node-box .status{font-size:11px;text-transform:uppercase}
+.node-box .error{font-size:10px;color:var(--failed);margin-top:4px}
+.arrow{font-size:20px;color:var(--muted);margin:0 8px}
+.legend{display:flex;gap:16px;margin-top:16px;font-size:12px}
+.legend span{display:flex;align-items:center;gap:4px}
+.dot{width:10px;height:10px;border-radius:50%}
+.dot.idle{background:var(--idle)} .dot.running{background:var(--running)}
+.dot.done{background:var(--done)} .dot.failed{background:var(--failed)}
+.dot.waiting{background:var(--waiting)}
+#controls{display:flex;gap:10px;margin-top:16px}
+button{padding:10px 20px;border:none;border-radius:8px;font-weight:600;cursor:pointer}
+.btn-pause{background:var(--running);color:#000}
+.btn-resume{background:var(--done);color:#000}
+.btn-approve{background:var(--waiting);color:#fff}
+.btn-reject{background:var(--failed);color:#fff}
+#checkpoints{margin-top:16px;background:var(--panel);border-radius:8px;padding:12px;max-height:200px;overflow-y:auto;font-size:12px}
+#checkpoints h3{font-size:14px;margin-bottom:8px;color:var(--accent)}
+.cp-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)}
+.cp-time{color:var(--muted)}
+.autorefresh{color:var(--muted);font-size:12px;margin-top:8px}
+</style>
+</head>
+<body>
+<h1>🔀 工作流监控面板</h1>
+<div class="subtitle">
+  <span id="projectName">-</span> | 
+  状态: <span id="wfStatus">-</span> | 
+  Checkpoint: <span id="cpCount">0</span> |
+  <span class="autorefresh">每 2 秒自动刷新</span>
+</div>
+
+<div id="graph"></div>
+
+<div class="legend">
+  <span><span class="dot idle"></span> 等待</span>
+  <span><span class="dot running"></span> 运行中</span>
+  <span><span class="dot done"></span> 完成</span>
+  <span><span class="dot failed"></span> 失败</span>
+  <span><span class="dot waiting"></span> 待审批</span>
+</div>
+
+<div id="controls">
+  <button class="btn-pause" onclick="action('pause')">⏸ 暂停</button>
+  <button class="btn-resume" onclick="action('resume')">▶ 继续</button>
+</div>
+
+<div id="checkpoints"><h3>📋 Checkpoints</h3></div>
+
+<script>
+const API = '/api/workflow';
+
+async function refresh(){
+  try{
+    const r = await fetch(`${API}/state?project=demo`);
+    const s = await r.json();
+    render(s);
+  }catch(e){}
+}
+
+function render(s){
+  document.getElementById('projectName').textContent = s.project_id || '-';
+  document.getElementById('wfStatus').textContent = s.status || '-';
+  document.getElementById('cpCount').textContent = s.checkpoint || 0;
+
+  if(!s.nodes){ return; }
+  const nodes = s.nodes;
+  const edges = s.edges || [];
+  const nodeIds = Object.keys(nodes);
+
+  // 按 edge 顺序排列节点
+  let order = [edges[0]?.from_node || nodeIds[0]];
+  for(const e of edges){
+    if(!order.includes(e.to_node)) order.push(e.to_node);
+  }
+
+  const graph = document.getElementById('graph');
+  graph.innerHTML = order.map((nid, i) => {
+    const n = nodes[nid] || {};
+    const cls = n.status || 'idle';
+    const icon = nid === 'done' ? '✅' : nid.includes('novel') ? '📖' : 
+                 nid.includes('director') ? '🎬' : nid.includes('storyboard') ? '🎨' :
+                 nid.includes('video') ? '🎥' : nid.includes('review') ? '🔍' : '📦';
+    return `<div class="node">
+      <div class="node-box ${cls}">
+        <div class="icon">${icon}</div>
+        <div class="name">${n.name || nid}</div>
+        <div class="status">${n.status || 'idle'}</div>
+        ${n.error ? `<div class="error">${n.error}</div>` : ''}
+      </div>
+      ${i < order.length-1 ? `<div class="arrow">→</div>` : ''}
+    </div>`;
+  }).join('');
+
+  // checkpoints
+  const cpDiv = document.getElementById('checkpoints');
+  if(s.recent_checkpoints){
+    cpDiv.innerHTML = '<h3>📋 Checkpoints</h3>' + s.recent_checkpoints.map(cp =>
+      `<div class="cp-row"><span>${cp.node || ''}</span><span class="cp-time">${cp.time || ''}</span></div>`
+    ).join('');
+  }
+}
+
+async function action(act){
+  await fetch(`${API}/${act}?project=demo`, {method:'POST'});
+  refresh();
+}
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>
